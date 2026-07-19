@@ -252,7 +252,7 @@ class Agent {
       const dx = this.exitX - this.x;
       this.face = dx >= 0 ? 1 : -1;
       this.x += Math.sign(dx) * (this.speed + 1.3);
-      this.walkPhase += 0.28;
+      this.walkPhase += 0.18;
       if (this.x < -50 || this.x > W + 50) { this.away = true; this.awayTimer = expedition ? expedition.duration : rand(3600, 18000); }
     }
     else if (this.state === "scared") {
@@ -260,7 +260,7 @@ class Agent {
       else {
         if (--this.fleeTimer <= 0) { this.fleeTimer = rand(14, 28); const away = this.x < pointer.x ? -1 : 1; this.fleeDir = Math.random() < 0.75 ? away : -away; }
         const step = this.fleeDir * this.speed * 2.8;
-        if (!this.wouldCollide(this.x + step)) { this.x += step; this.face = this.fleeDir; this.walkPhase += 0.4; }
+        if (!this.wouldCollide(this.x + step)) { this.x += step; this.face = this.fleeDir; this.walkPhase += 0.24; }
         else this.fleeDir *= -1;
         if (!this.say && Math.random() < 0.03) this.speak(pick(["Aaah!", "Nu mă prinde!", "Ferește!"]), 40);
       }
@@ -281,7 +281,7 @@ class Agent {
         else if (!this.jumping) {
           const step = Math.sign(dx) * this.speed * 2.6;
           this.face = dx >= 0 ? 1 : -1;
-          if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.34; }
+          if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.22; }
         }
       }
     }
@@ -296,10 +296,10 @@ class Agent {
       const dx = o.x - this.x;
       const d = Math.abs(dx) || 1;
       this.face = dx >= 0 ? 1 : -1;
-      if (d > 66) { this.x += Math.sign(dx) * (this.speed + 0.5); this.walkPhase += 0.25; }
+      if (d > 66) { this.x += Math.sign(dx) * (this.speed + 0.5); this.walkPhase += 0.16; }
       else if (d < 52) { // prea aproape → se depărtează (nu se suprapun)
         const s = dx !== 0 ? Math.sign(dx) : (agents.indexOf(this) < agents.indexOf(o) ? 1 : -1);
-        this.x -= s * (this.speed + 0.5); this.walkPhase += 0.2;
+        this.x -= s * (this.speed + 0.5); this.walkPhase += 0.13;
       }
       else if (this.attacker && this.punchTimer-- <= 0) {
         this.punchTimer = rand(30, 50);
@@ -338,7 +338,7 @@ class Agent {
         else {
           const step = Math.sign(dx) * this.speed;
           this.face = dx >= 0 ? 1 : -1;
-          if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.18; }
+          if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.115; }
         }
       }
     }
