@@ -40,6 +40,9 @@ class Agent {
     this.buildTimer = 0;
     this.buildDur = 0;
     this.builtCount = 0; // max 2 construcții per stickman
+    this.jumping = false;
+    this.jumpT = 0;
+    this.jumpCd = 0;
   }
 
   speak(text, ttl = 120) { this.say = { text, ttl }; }
@@ -76,13 +79,22 @@ class Agent {
     this.stars.forEach(s => { s.ang += 0.2; s.r *= 0.96; });
     if (this.state !== "sleep" && !this.chatting) this.sleepCd--;
 
+    // salt peste alții (overlay peste mers/alergare)
+    if (this.jumpCd > 0) this.jumpCd--;
+    if (this.jumping) {
+      this.jumpT += 1 / 28;
+      this.x += this.face * (this.speed + 1.8);
+      this.walkPhase += 0.22;
+      if (this.jumpT >= 1) { this.jumping = false; this.jumpT = 0; this.jumpCd = 30; }
+    }
+
     if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
     if (--this.chatterTimer <= 0) {
       this.chatterTimer = rand(700, 1500);
       if (this.state === "walk" || this.state === "idle") this.speak(pick(this.c.chatter), 120);
     }
 
-    if (this.chatting) { this.state = "idle"; this.face = 1; return; }
+    if (this.chatting) { this.state = "idle"; this.face = 1; this.jumping = false; return; }
 
     if (this.state === "hit") {
       this.x += this.vx; this.vx *= 0.9;
@@ -101,7 +113,7 @@ class Agent {
       else {
         const dx = this.targetX - this.x;
         if (Math.abs(dx) < 6) { this.targetX = null; this.state = "walk"; this.stateTimer = rand(40, 120); }
-        else { this.x += Math.sign(dx) * this.speed * 2.6; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.34; }
+        else if (!this.jumping) { this.x += Math.sign(dx) * this.speed * 2.6; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.34; }
       }
     }
     else if (this.state === "sleep") {
@@ -153,10 +165,21 @@ class Agent {
           else { this.state = "walk"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 300); }
         }
       }
-      if (this.state === "walk" && this.targetX !== null) {
+      if (this.state === "walk" && this.targetX !== null && !this.jumping) {
         const dx = this.targetX - this.x;
         if (Math.abs(dx) < 4) this.targetX = null;
         else { this.x += Math.sign(dx) * this.speed; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.18; }
+      }
+    }
+
+    // dacă merge/aleargă și dă de cineva chiar în față → sare peste el
+    if ((this.state === "walk" || this.state === "run") && !this.jumping && this.jumpCd <= 0) {
+      for (const o of agents) {
+        if (o === this) continue;
+        const dxo = o.x - this.x;
+        if (Math.sign(dxo) === this.face && Math.abs(dxo) > 10 && Math.abs(dxo) < 46) {
+          this.jumping = true; this.jumpT = 0; this.jumpCd = 70; break;
+        }
       }
     }
 
@@ -169,8 +192,10 @@ class Agent {
     const feetY = Math.round(groundY);
     const x = Math.round(this.x - (this.recoil || 0) * this.face);
 
+    const jumpY = this.jumping ? Math.sin(this.jumpT * Math.PI) * 74 : 0; // arc peste ceilalți
+
     ctx.save();
-    ctx.translate(x, feetY);
+    ctx.translate(x, feetY - jumpY);
     if (this.lie > 0) ctx.rotate(this.lie * (Math.PI / 2) * this.sleepDir);
     ctx.scale(this.face, 1);
 
@@ -186,7 +211,16 @@ class Agent {
     const striking = this.state === "fight" && this.attackAnim > 0;
 
     // ---- picioare ----
-    if (striking && this.attackType === "kick") {
+    if (this.jumping) {
+      for (const side of [-1, 1]) { // picioare strânse la salt
+        const hipX = side * 3;
+        ctx.beginPath();
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(hipX + side * 12, hipY + 12);
+        ctx.lineTo(hipX + side * 4, hipY - 4);
+        ctx.stroke();
+      }
+    } else if (striking && this.attackType === "kick") {
       ctx.beginPath(); ctx.moveTo(-4, hipY); ctx.lineTo(-8, 0); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(4, hipY); ctx.lineTo(26, hipY + 2); ctx.lineTo(50, hipY - 6); ctx.stroke();
     } else {
@@ -212,7 +246,10 @@ class Agent {
 
     // ---- brațe ----
     const upper = 20, fore = 18, sx = leanX, sy = shoulderY + 4;
-    if (this.state === "build") {
+    if (this.jumping) { // brațe ridicate la salt
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 16, sy - 12); ctx.lineTo(sx + 26, sy - 24); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - 16, sy - 12); ctx.lineTo(sx - 26, sy - 24); ctx.stroke();
+    } else if (this.state === "build") {
       const hammer = Math.sin(this.bob * 5) * 8;
       ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 14, sy - 12 + hammer); ctx.lineTo(sx + 24, sy - 24 + hammer); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - 12, sy - 10 - hammer); ctx.lineTo(sx - 20, sy - 20 - hammer); ctx.stroke();
