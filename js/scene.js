@@ -822,19 +822,41 @@ function pySplitArgs(s) {
   if (cur.trim()) args.push(cur);
   return args;
 }
+function execLine(line, vars) {
+  line = line.trim();
+  if (!line || line.startsWith("#")) return;
+  const pm = line.match(/^print\((.*)\)\s*$/);
+  if (pm) { printToGround(pySplitArgs(pm[1]).map(a => pyStr(pyEval(a, vars))).join(" ")); return; }
+  const am = line.match(/^([a-zA-Z_]\w*)\s*=\s*(.+)$/);
+  if (am && !/[=<>!]=/.test(line)) { vars[am[1]] = pyEval(am[2], vars); }
+}
 function runPython(text) {
   const vars = {};
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const pm = line.match(/^print\((.*)\)\s*$/);
-    if (pm) { const out = pySplitArgs(pm[1]).map(a => pyStr(pyEval(a, vars))).join(" "); printToGround(out); continue; }
-    const am = line.match(/^([a-zA-Z_]\w*)\s*=\s*(.+)$/);
-    if (am && !/[=<>!]=/.test(line)) { vars[am[1]] = pyEval(am[2], vars); continue; }
+  const lines = text.split("\n");
+  const indentOf = (l) => l.match(/^(\s*)/)[1].length;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === "" || lines[i].trim().startsWith("#")) continue;
+    const line = lines[i].trim();
+    // do(N): ...  sau  for x in range(N): ...
+    const m = line.match(/^(?:do\(\s*(.+?)\s*\)|for\s+([a-zA-Z_]\w*)\s+in\s+range\(\s*(.+?)\s*\))\s*:\s*(.*)$/);
+    if (m) {
+      const count = clamp(Math.floor(pyEval(m[1] || m[3], vars)) || 0, 0, 5000);
+      const loopVar = m[2] || null, inline = m[4].trim();
+      let body = [];
+      if (inline) body = [inline];
+      else {
+        const hi = indentOf(lines[i]); let j = i + 1;
+        while (j < lines.length && (lines[j].trim() === "" || indentOf(lines[j]) > hi)) { if (lines[j].trim()) body.push(lines[j]); j++; }
+        i = j - 1;
+      }
+      for (let k = 0; k < count; k++) { if (loopVar) vars[loopVar] = k; for (const bl of body) execLine(bl, vars); }
+      continue;
+    }
+    execLine(line, vars);
   }
 }
 let groundTexts = [];
-function printToGround(msg) { groundTexts.push({ x: rand(140, W - 140), y: groundY - 24, text: msg, life: 260 }); }
+function printToGround(msg) { groundTexts.push({ x: rand(140, W - 140), y: groundY - 24, text: msg, life: 260 }); if (groundTexts.length > 150) groundTexts.splice(0, groundTexts.length - 150); }
 function drawGroundTexts() {
   ctx.save(); ctx.textAlign = "center"; ctx.font = "bold 24px 'Segoe UI', sans-serif";
   for (let i = groundTexts.length - 1; i >= 0; i--) {
@@ -1162,6 +1184,7 @@ window.addEventListener("keydown", (e) => {
     if (e.ctrlKey && (e.key === "e" || e.key === "E")) { runPython(n.text); e.preventDefault(); return; } // Ctrl+E = rulează
     if (e.key === "Backspace") { if (n.cursor > 0) { n.text = n.text.slice(0, n.cursor - 1) + n.text.slice(n.cursor); n.cursor--; } e.preventDefault(); }
     else if (e.key === "Enter") { n.text = n.text.slice(0, n.cursor) + "\n" + n.text.slice(n.cursor); n.cursor++; e.preventDefault(); }
+    else if (e.key === "Tab") { n.text = n.text.slice(0, n.cursor) + "  " + n.text.slice(n.cursor); n.cursor += 2; e.preventDefault(); }
     else if (e.key === "Escape") { closeNotepad(); }
     else if (e.key === "ArrowLeft") { n.cursor = Math.max(0, n.cursor - 1); e.preventDefault(); }
     else if (e.key === "ArrowRight") { n.cursor = Math.min(n.text.length, n.cursor + 1); e.preventDefault(); }
