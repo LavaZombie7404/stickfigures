@@ -196,6 +196,7 @@ class Agent {
 
   grab() {
     this.state = "held";
+    this.landWin = null;
     this.heldY = Math.min(pointer.y, groundY);
     this.jumping = false; this.burning = false; this.building = null;
     this.lie = 0; this.sleepPhase = null; this.sleepCd = rand(3600, 18000); // se trezește dacă dormea
@@ -569,7 +570,15 @@ class Agent {
     this.tz -= this.tzv;
     this.tangle += this.tangVel;
     if (this.x < 40 || this.x > W - 40) { this.tvx *= -0.5; this.x = clamp(this.x, 40, W - 40); }
+    // aterizează pe partea de sus a ferestrei spre care a fost aruncat
+    const lw = this.landWin;
+    if (lw && this.tzv > 0 && openWindows().includes(lw) && this.x >= lw.x && this.x <= lw.x + lw.w && this.tz <= groundY - lw.y) {
+      this.landWin = null; this.tangle = 0; this.tangVel = 0; this.squash = 1;
+      this.stayOnWindow(lw, this.x, lw.y); // aterizează și stă pe ea
+      return;
+    }
     if (this.tz <= 0) {
+      this.landWin = null;
       this.tz = 0;
       if (this.tzv > 5 && this.bounces < 2) {
         this.bounces++;
@@ -1004,8 +1013,8 @@ window.addEventListener("mouseup", (e) => {
   }
   if (pointer.grabbed) {
     const g = pointer.grabbed, drop = dropTarget(pointer.x, pointer.y);
-    if (drop && pointer.y < groundY - 20) { // lăsat pe o aplicație / desen, în aer → rămâne acolo
-      if (drop.type === "win") g.stayOnWindow(drop.win, pointer.x, pointer.y);
+    if (drop && pointer.y < groundY - 20) { // lăsat deasupra unei aplicații / desen
+      if (drop.type === "win") { const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py; g.release(vx * 1.3, vy * 1.3); g.landWin = drop.win; } // cade pe fereastră
       else g.stayOnDrawing(drop.d);
     } else {
       const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py;
