@@ -33,13 +33,7 @@ const elForm = panel.querySelector(".chat-form");
 const elInput = elForm.querySelector("input");
 const elBanner = panel.querySelector(".chat-banner");
 
-function refreshBanner() {
-  if (hasKey()) elBanner.classList.add("hidden");
-  else {
-    elBanner.classList.remove("hidden");
-    elBanner.innerHTML = "AI real dezactivat. Apasă ⚙ și pune o cheie Claude pentru chat inteligent.";
-  }
-}
+function refreshBanner() { elBanner.classList.add("hidden"); }
 
 function addMsg(who, text) {
   const el = document.createElement("div");
@@ -149,7 +143,7 @@ function scriptedReply(c, msg) {
   if (/cine|nume|esti|ești/.test(t)) return `Sunt ${c.name}, din gașca lui Alan Becker!`;
   if (/ce faci|cum esti|cum ești/.test(t)) return pick(c.chatter);
   if (/pa|bye|la revedere/.test(t)) return "Pa! Revino oricând. 👋";
-  return pick([...c.chatter, "Pune o cheie Claude (⚙) ca să vorbesc cu adevărat 🙂", "Interesant! Mai zi."]);
+  return pick([...c.chatter, "Interesant! Mai zi.", "Zi mai departe 🙂", "Hmm, spune-mi mai mult."]);
 }
 
 // ================= CHAT DE GRUP (vorbește cu toți) =================
@@ -177,10 +171,7 @@ const gForm = gpanel.querySelector(".chat-form");
 const gInput = gForm.querySelector("input");
 const gBanner = gpanel.querySelector(".chat-banner");
 
-function refreshGBanner() {
-  if (hasKey()) gBanner.classList.add("hidden");
-  else { gBanner.classList.remove("hidden"); gBanner.textContent = "AI real dezactivat. Apasă ⚙ și pune o cheie Claude."; }
-}
+function refreshGBanner() { gBanner.classList.add("hidden"); }
 
 function gAdd(who, name, color, text) {
   const el = document.createElement("div");
