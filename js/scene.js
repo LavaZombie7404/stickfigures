@@ -767,7 +767,7 @@ function star(ctx, x, y, r) {
 // ===== RENDER: desen pe canvas 2D offscreen → compus prin WebGL (GPU + shader) =====
 // Fallback automat la 2D pur dacă WebGL nu e disponibil. Emoji/text rămân intacte.
 const canvas = document.getElementById("scene");
-let ctx, gfx = null, gl = null, glState = null, fxLevel = 0.35;
+let ctx, gfx = null, gl = null, glState = null, fxLevel = 0.1;
 function glSupported() { try { return !!document.createElement("canvas").getContext("webgl"); } catch (e) { return false; } }
 (function initRenderer() {
   if (glSupported()) {
@@ -1718,7 +1718,7 @@ window.addEventListener("keydown", (e) => {
   if (k === "r") { spawnPlayer(); return; }
   if (k === "t") { removePlayers(); return; }
   if (k === "h") { showHitboxes = !showHitboxes; return; }
-  if (k === "g") { fxLevel = fxLevel < 0.2 ? 0.35 : (fxLevel < 0.6 ? 0.7 : 0); return; } // intensitate shader WebGL
+  if (k === "g") { fxLevel = fxLevel < 0.05 ? 0.1 : (fxLevel < 0.2 ? 0.35 : (fxLevel < 0.6 ? 0.7 : 0)); return; } // intensitate shader WebGL
   if (k === " " || k === "spacebar") { if (player && !player.jumping && player.jumpCd <= 0) { player.jumping = true; player.jumpT = 0; } e.preventDefault(); return; }
   if (k === "a" || k === "d" || k === "arrowleft" || k === "arrowright") { keys.add(k); if (k.startsWith("arrow")) e.preventDefault(); }
 });
@@ -1735,6 +1735,8 @@ function drawHitboxes() {
     let cx = a.x, baseY = groundY;
     if (a.state === "held") { cx = pointer.x; baseY = Math.min(pointer.y, groundY); }
     else if (a.state === "thrown") { baseY = groundY - a.tz; }
+    else if (a.state === "climb" || (a.state === "gopaint" && a.tz > 0)) { baseY = groundY - a.tz; }
+    else if (a.jumping) { baseY = groundY - Math.sin(a.jumpT * Math.PI) * 155; } // hitboxul sare cu modelul
     ctx.strokeRect(cx - half, baseY - bodyH, half * 2, bodyH);
     ctx.fillText(a.c.name, cx, baseY - bodyH - 5);
   }
