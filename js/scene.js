@@ -1098,6 +1098,12 @@ function openMinecraft() {
     vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, onGround: false,
     state: "idle", timer: rand(15, 90), walkPhase: Math.random() * 6, wood: 0, mineC: 0, mineR: 0, mineProg: 0,
   }));
+  // TU — personajul controlat de tine (gri, cu marcaj)
+  m.mobs.push({
+    isPlayer: true, color: "#aab0be", hollow: false, crown: false, headR: 20,
+    px: (Math.floor(cols / 2) + 0.5) * t, py: m.groundRow * t,
+    vx: 0, vy: 0, face: 1, onGround: false, state: "idle", timer: 1e9, walkPhase: 0, wood: 0, mineC: 0, mineR: 0, mineProg: 0, wantJump: false,
+  });
   minecraftWin = m;
 }
 function closeMinecraft() { minecraftWin = null; }
@@ -1162,6 +1168,7 @@ function updateMinecraft() {
     mob.vy = Math.min(mob.vy + 0.6, 12); mob.py += mob.vy;
     const fc = clamp(Math.floor(mob.px / t), 0, m.cols - 1), fr = Math.floor(mob.py / t);
     if (mcSolid(m, fc, fr)) { mob.py = fr * t; mob.vy = 0; mob.onGround = true; } else mob.onGround = false;
+    if (mob.isPlayer) { mcPlayerControl(m, mob); continue; } // TU — controlat de taste
     if (--mob.timer <= 0) mcPickAction(m, mob);
     if (mob.state === "walk") {
       mob.px += mob.vx; mob.walkPhase += 0.2;
@@ -1174,6 +1181,20 @@ function updateMinecraft() {
       else { mob.mineProg += 0.02; if (mob.mineProg >= 1) { m.grid[mob.mineR][mob.mineC] = 0; if (ty === 4) { mob.wood++; m.wood++; } mob.state = "idle"; mob.timer = rand(20, 50); } }
     }
   }
+}
+function mcPlayerControl(m, mob) {
+  const t = m.tile;
+  let dir = 0;
+  if (keys.has("a") || keys.has("arrowleft")) dir -= 1;
+  if (keys.has("d") || keys.has("arrowright")) dir += 1;
+  if (dir) {
+    mob.face = dir; mob.walkPhase += 0.22; mob.state = "walk";
+    const nx = mob.px + dir * 2.6, wc = Math.floor((nx + dir * t * 0.3) / t), br = Math.floor((mob.py - t * 0.5) / t);
+    if (!mcSolid(m, wc, br)) mob.px = clamp(nx, t * 0.5, m.w - t * 0.5);
+    else if (mob.onGround && !mcSolid(m, wc, br - 1)) mob.vy = -9; // urcă automat o treaptă
+  } else mob.state = "idle";
+  if (mob.wantJump && mob.onGround) mob.vy = -10.5; // sărit
+  mob.wantJump = false;
 }
 function mcBlockColor(ty) { return { 1: "#5aab3a", 2: "#7a5a3a", 3: "#828289", 4: "#6b4a2a", 5: "#3f8f3a", 6: "#b8894e" }[ty] || "#000"; }
 function mcDrawBlock(x, y, s, ty) {
@@ -1225,6 +1246,15 @@ function drawMinecraft() {
   for (let r = 0; r < m.rows; r++) { const row = m.grid[r]; for (let c = 0; c < m.cols; c++) { const ty = row[c]; if (ty) mcDrawBlock(m.x + c * t, m.y + r * t, t, ty); } }
   for (const mob of m.mobs) mcDrawMob(m, mob);
   for (const mob of m.mobs) if (mob.state === "mine") mcCracks(m, mob);
+  const pm = m.mobs.find(mo => mo.isPlayer);
+  if (pm) {
+    const mx = m.x + pm.px, my = m.y + pm.py - 72 + Math.sin(frame * 0.12) * 3;
+    ctx.save(); ctx.fillStyle = "#ffe14d"; ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 3; ctx.lineJoin = "round";
+    ctx.font = "bold 13px 'Segoe UI', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.strokeText("TU", mx, my); ctx.fillText("TU", mx, my);
+    ctx.beginPath(); ctx.moveTo(mx - 6, my + 5); ctx.lineTo(mx + 6, my + 5); ctx.lineTo(mx, my + 13); ctx.closePath(); ctx.stroke(); ctx.fill();
+    ctx.restore();
+  }
   ctx.restore();
   ctx.fillStyle = "rgba(20,20,26,0.92)"; ctx.fillRect(m.x, m.y, m.w, 26);
   ctx.fillStyle = "#e8ecff"; ctx.font = "13px 'Segoe UI', sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("⛏️ Minecraft 2D", m.x + 12, m.y + 14);
@@ -1629,6 +1659,12 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   const k = e.key.toLowerCase();
+  if (minecraftWin) { // în Minecraft controlezi personajul tău
+    if (k === "escape") { closeMinecraft(); return; }
+    if (k === " " || k === "spacebar") { const pm = minecraftWin.mobs.find(mo => mo.isPlayer); if (pm) pm.wantJump = true; e.preventDefault(); return; }
+    if (k === "a" || k === "d" || k === "arrowleft" || k === "arrowright") { keys.add(k); if (k.startsWith("arrow")) e.preventDefault(); }
+    return;
+  }
   if (k === "r") { spawnPlayer(); return; }
   if (k === "t") { removePlayers(); return; }
   if (k === "h") { showHitboxes = !showHitboxes; return; }
