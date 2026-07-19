@@ -688,6 +688,17 @@ window.recallAdventurers = function () {
   return n;
 };
 
+// întoarce un singur membru (după nume)
+window.recallOne = function (name) {
+  const a = agents.find(x => x.c.name === name && (x.away || x.state === "leaving"));
+  if (!a) return false;
+  for (let i = _pending.length - 1; i >= 0; i--) if (_pending[i].a === a) _pending.splice(i, 1);
+  if (a.away) a.awayTimer = 1;
+  else if (a.state === "leaving") a.returnFromAdventure(W);
+  if (!agents.some(x => x.adventure && (x.away || x.state === "leaving"))) expedition = null;
+  return true;
+};
+
 // info expediție pentru buton
 window.getExpedition = function () {
   const members = agents.filter(a => a.adventure && (a.away || a.state === "leaving"));

@@ -329,13 +329,21 @@ function renderScreen() {
   requestAnimationFrame(renderScreen);
 }
 
+// buton individual / toți (delegare — supraviețuiește la re-randare)
+eBody.addEventListener("click", (e) => {
+  const one = e.target.closest(".exped-recall1");
+  if (one) { if (window.recallOne) window.recallOne(one.dataset.name); refreshExped(); return; }
+  if (e.target.closest(".exped-recall-all")) { if (window.recallAdventurers) window.recallAdventurers(); refreshExped(); }
+});
+
 let expedTick = null;
 function refreshExped() {
   const info = window.getExpedition ? window.getExpedition() : { active: false };
   ego.style.display = info.active ? "none" : "block";
   if (!info.active) { eBody.innerHTML = `<p class="exped-empty">Nimeni nu e plecat acum.</p><p class="exped-hint">Apasă butonul de jos ca să-i trimiți, sau așteaptă ca Orange să strige „Aventură!". Scrie <b>veniti</b> în chat ca să-i chemi.</p>`; return; }
   const t = info.remaining === null ? "pornesc chiar acum…" : `se întorc în ~${Math.floor(info.remaining / 60)}:${String(info.remaining % 60).padStart(2, "0")}`;
-  eBody.innerHTML = `<p class="exped-line">🧭 <b>${info.names.join(", ")}</b></p><p class="exped-line">📍 spre <b>${info.place}</b></p><p class="exped-line">⚔️ ca să <b>${info.activity}</b></p><p class="exped-line">⏳ ${t}</p>`;
+  const rows = (info.members || []).map(m => `<div class="exped-mem"><span class="exped-mem-name" style="color:${m.color}">● ${m.name}</span><button class="exped-recall1" data-name="${m.name}" title="Întoarce-l pe ${m.name}">↩</button></div>`).join("");
+  eBody.innerHTML = `<p class="exped-line">📍 <b>${info.place}</b> — ${info.activity}</p><p class="exped-line">⏳ ${t}</p><div class="exped-mems">${rows}</div><button class="exped-recall-all">↩ Întoarce toți</button>`;
 }
 ebtn.addEventListener("click", () => {
   epanel.classList.toggle("hidden");
