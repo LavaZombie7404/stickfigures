@@ -199,7 +199,7 @@ class Agent {
 
   grab() {
     this.state = "held";
-    this.landWin = null;
+    this.landWin = null; this.landStruct = null;
     this.heldY = Math.min(pointer.y, groundY);
     this.jumping = false; this.burning = false; this.building = null;
     this.lie = 0; this.sleepPhase = null; this.sleepCd = rand(3600, 18000); // se trezește dacă dormea
@@ -218,6 +218,13 @@ class Agent {
     this.speak(pick(["Woohoo!", "Aaaa!", "Zbooor!"]), 80);
   }
 
+  die() { // lovit mortal de sabie → cade, apoi reînvie
+    if (this.opponent) this.endFight();
+    this.opponent = null; this.attacker = false;
+    this.state = "dead"; this.deadTimer = rand(200, 340); this.lie = 1; this.sleepPhase = null;
+    this.sleepDir = Math.random() < 0.5 ? 1 : -1; this.weapon = null; this.stars = [];
+    this.speak(pick(["Aaargh!", "M-ai... învins...", "Gata cu mine..."]), 70);
+  }
   startFight(other) {
     this.state = "fight"; this.opponent = other; this.stateTimer = rand(300, 520);
     this.attacker = true; this.punchTimer = 34;
@@ -242,6 +249,7 @@ class Agent {
     this.stars.forEach(s => { s.ang += 0.2; s.r *= 0.96; });
 
     // stări care ignoră restul
+    if (this.state === "dead") { if (this.say) { if (--this.say.ttl <= 0) this.say = null; } if (--this.deadTimer <= 0) { this.state = "walk"; this.lie = 0; this.targetX = null; this.stateTimer = rand(60, 140); this.speak(pick(["Am înviat! 💀→😀", "M-am întors!", "Din nou în picioare!"]), 100); } return; }
     if (this.state === "held") { this.x = pointer.x; return; }
     if (this.state === "thrown") { this.updateThrown(W); return; }
     if (this.state === "onwin") { this.updateOnWin(W); return; } // stă pe podeaua unei ferestre
@@ -427,6 +435,31 @@ class Agent {
         if (this.tz <= 0) { this.tz = 0; this.state = "walk"; this.climbWin = null; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 6); }
       }
     }
+    else if (this.state === "onstruct") { // se urcă pe o clădire/structură
+      const s = this.onStruct;
+      if (!s || !structures.includes(s)) { this.onStruct = null; this.state = "walk"; this.tz = 0; this.targetX = null; return; }
+      const box = structBox(s), base = s.by || groundY, top = base - box.h, lo = s.x - box.hw + 8, hi = s.x + box.hw - 8;
+      if (this.osPhase === "go") {
+        const dx = s.x - this.x;
+        if (Math.abs(dx) < 14) { this.osPhase = "up"; this.tz = 0; this.osTargetTz = clamp(groundY - top, 20, groundY - 10); }
+        else if (!this.jumping) { this.x += Math.sign(dx) * this.speed * 1.8; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.16; }
+      } else if (this.osPhase === "up") {
+        this.tz += (this.osTargetTz - this.tz) * 0.22;
+        if (this.osTargetTz - this.tz < 4) { this.tz = this.osTargetTz; this.osPhase = "stand"; this.osTimer = rand(260, 520); this.osVX = 0; this.speak(pick(["Ce priveliște!", "Sus de tot!", "Regele dealului!"]), 80); }
+      } else if (this.osPhase === "stand") {
+        this.tz = groundY - top; // urmează clădirea dacă e trasă
+        if (--this.osTimer <= 0) { this.osPhase = "fall"; this.climbV = 0; }
+        else {
+          if (this.osVX === 0) { if (Math.random() < 0.03) this.osVX = (Math.random() < 0.5 ? -1 : 1) * this.speed; }
+          else if (Math.random() < 0.02) this.osVX = 0;
+          if (this.osVX) { this.x += this.osVX; this.face = Math.sign(this.osVX); this.walkPhase += 0.13; if (this.x <= lo || this.x >= hi) this.osVX *= -1; }
+          this.x = clamp(this.x, lo, hi);
+        }
+      } else { // cade jos
+        this.climbV += 0.9; this.tz -= this.climbV;
+        if (this.tz <= 0) { this.tz = 0; this.state = "walk"; this.onStruct = null; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 6); }
+      }
+    }
     else if (this.state === "getweapon") { // merge la armă, o ia, se uită la ea, apoi zice
       const wp = this._wpT;
       if (this._admire === undefined) {
@@ -474,7 +507,8 @@ class Agent {
           this.attackType = this.weapon === "sword" ? "punch" : (Math.random() < 0.5 ? "punch" : "kick");
           o.recoil = this.attackType === "kick" ? 18 : 14;
           o.stars = [{ ang: 0, r: 22 }, { ang: 2, r: 22 }, { ang: 4, r: 22 }];
-          if (!o.say) o.speak(pick(o.c.hitLines), 45);
+          if (this.weapon === "sword" && o.state !== "dead" && Math.random() < 0.2) o.die(); // lovitură mortală de sabie
+          else if (!o.say) o.speak(pick(o.c.hitLines), 45);
         }
         this.attacker = false; o.attacker = true; o.punchTimer = rand(24, 40);
       }
@@ -515,7 +549,10 @@ class Agent {
             this.climbWin = w; this.climbPhase = "go"; this.state = "climbwin"; this.targetX = null;
             this.winTargetX = clamp(gx, 60, W - 60); this.winGY = gy;
             this.speak(pick(["Mă urc pe ecran! 🧗", "La fereastră!", "Sus pe ea!"]), 90);
-          } else if (r < 0.085) {
+          } else if (structures.length && r < 0.085) {
+            this.onStruct = pick(structures); this.osPhase = "go"; this.state = "onstruct"; this.targetX = null;
+            this.speak(pick(["Mă urc pe clădire! 🧗", "Sus pe casă!", "La înălțime!"]), 90);
+          } else if (r < 0.105) {
             const cx = clamp(this.x + rand(-40, 40), 90, W - 90);
             const cy = rand(90, Math.max(130, groundY - 190));
             this.doodle = makeDoodle(cx, cy, rand(30, 48), this.c.color);
@@ -604,8 +641,20 @@ class Agent {
       this.stayOnWindow(lw, this.x, lw.y); // aterizează și stă pe ea
       return;
     }
+    // aterizează pe partea de sus a unei clădiri
+    const ls = this.landStruct;
+    if (ls && this.tzv > 0 && structures.includes(ls)) {
+      const b = structBox(ls), base = ls.by || groundY, top = base - b.h;
+      if (this.x >= ls.x - b.hw && this.x <= ls.x + b.hw && this.tz <= groundY - top) {
+        this.landStruct = null; this.tangle = 0; this.tangVel = 0; this.squash = 1;
+        this.state = "onstruct"; this.onStruct = ls; this.osPhase = "stand"; this.osTimer = 100000; this.osVX = 0;
+        this.tz = groundY - top; this.x = clamp(this.x, ls.x - b.hw + 8, ls.x + b.hw - 8);
+        this.speak(pick(["Aici stau!", "Sus rămân!"]), 80);
+        return;
+      }
+    }
     if (this.tz <= 0) {
-      this.landWin = null;
+      this.landWin = null; this.landStruct = null;
       this.tz = 0;
       if (this.tzv > 5 && this.bounces < 2) {
         this.bounces++;
@@ -632,7 +681,7 @@ class Agent {
     } else if (this.state === "thrown") {
       ctx.translate(this.x, groundY - this.tz);
       ctx.rotate(this.tangle);
-    } else if (this.state === "climb" || this.state === "climbwin" || this.state === "onwin" || (this.state === "gopaint" && this.tz > 0)) {
+    } else if (this.state === "climb" || this.state === "climbwin" || this.state === "onwin" || this.state === "onstruct" || (this.state === "gopaint" && this.tz > 0)) {
       ctx.translate(Math.round(this.x), Math.round(groundY - this.tz));
       if (this.squash > 0.02) { scaleY *= 1 - this.squash * 0.28; scaleX *= 1 + this.squash * 0.24; }
     } else {
@@ -661,9 +710,10 @@ class Agent {
     const gpClimb = st === "gopaint" && (this.gpPhase === "up" || this.gpPhase === "fall");
     const winClimbMove = st === "climbwin" && (this.climbPhase === "up" || this.climbPhase === "fall");
     const winClimbHang = st === "climbwin" && this.climbPhase === "hang";
-    const hanging = st === "climb" || gpClimb || winClimbMove || winClimbHang;
+    const structMove = st === "onstruct" && (this.osPhase === "up" || this.osPhase === "fall");
+    const hanging = st === "climb" || gpClimb || winClimbMove || winClimbHang || structMove;
     const painting = (st === "draw") || (st === "gopaint" && this.gpPhase === "draw");
-    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go") || (st === "climbwin" && this.climbPhase === "go") || (st === "onwin" && this.onWinVX) || (st === "getweapon" && this._admire === undefined));
+    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go") || (st === "climbwin" && this.climbPhase === "go") || (st === "onwin" && this.onWinVX) || (st === "getweapon" && this._admire === undefined) || (st === "onstruct" && this.osPhase === "go") || (st === "onstruct" && this.osPhase === "stand" && this.osVX));
     const running = (st === "run" || st === "leaving" || st === "scared");
     const breathe = Math.sin(this.bob) * 1.5;
     const bodyBob = walking ? Math.sin(this.walkPhase * 2) * 2 : breathe;
@@ -692,7 +742,7 @@ class Agent {
       const sway = Math.sin(this.bob * 2) * 6;
       this.legIK(ctx, -3, hipY, -6 + sway, hipY + 48, -1);
       this.legIK(ctx, 3, hipY, 9 + sway, hipY + 48, -1);
-    } else if (st === "sleep" || st === "build" || st === "idle" || painting || (st === "onwin" && !this.onWinVX) || (st === "getweapon" && this._admire !== undefined)) {
+    } else if (st === "sleep" || st === "build" || st === "idle" || painting || (st === "onwin" && !this.onWinVX) || (st === "getweapon" && this._admire !== undefined) || (st === "onstruct" && this.osPhase === "stand" && !this.osVX)) {
       this.legIK(ctx, -4, hipY, -6, 0, -1);
       this.legIK(ctx, 4, hipY, 6, 0, -1);
     } else {
@@ -861,6 +911,13 @@ class Agent {
       ctx.restore();
     }
 
+    // marcaj mort (💀) — reînvie după câteva secunde
+    if (this.state === "dead") {
+      ctx.save(); ctx.font = "22px serif"; ctx.textAlign = "center";
+      ctx.globalAlpha = Math.min(1, this.deadTimer / 30);
+      ctx.fillText("💀", x, feetY - 40 + Math.sin(frame * 0.1) * 2);
+      ctx.restore();
+    }
     // marcaj provocator (selectat prin dublu-click)
     if (challenger === this && this.state !== "held") {
       ctx.save();
@@ -904,7 +961,7 @@ function glSupported() { try { return !!document.createElement("canvas").getCont
 window.setFx = (v) => { fxLevel = v; };
 window.getRenderInfo = () => ({ webgl: !!gl, fx: fxLevel });
 window.getMinecraft = () => minecraftWin;
-window.weapons = weapons; window.arrows = arrows;
+window.weapons = weapons; window.arrows = arrows; window.structures = structures;
 let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
@@ -996,7 +1053,7 @@ function nearestAgent(cx, cy) {
   for (const a of agents) {
     if (a.away) continue;
     let feetY = groundY;
-    if (a.state === "climb" || a.state === "climbwin" || a.state === "onwin" || a.state === "thrown" || (a.state === "gopaint" && a.tz > 0)) feetY = groundY - a.tz;
+    if (a.state === "climb" || a.state === "climbwin" || a.state === "onwin" || a.state === "onstruct" || a.state === "thrown" || (a.state === "gopaint" && a.tz > 0)) feetY = groundY - a.tz;
     else if (a.jumping) feetY = groundY - Math.sin(a.jumpT * Math.PI) * 155;
     const torsoY = feetY - 70, headY = feetY - 100 - a.c.headR;
     const d = Math.min(Math.hypot(a.x - cx, torsoY - cy), Math.hypot(a.x - cx, headY - cy));
@@ -1065,7 +1122,7 @@ window.addEventListener("mousemove", (e) => {
     for (const mob of m.mobs) { mob.px *= ratio; mob.py *= ratio; mob.vy *= ratio; }
     return;
   }
-  if (pointer.dragStruct) { const d = pointer.dragStruct; d.s.x = clamp(pointer.x - d.ox, 40, W - 40); d.s.by = clamp(pointer.y - d.oy, 120, groundY); return; }
+  if (pointer.dragStruct) { const d = pointer.dragStruct, nx = clamp(pointer.x - d.ox, 40, W - 40), ddx = nx - d.s.x; d.s.x = nx; d.s.by = clamp(pointer.y - d.oy, 120, groundY); for (const a of agents) if (a.state === "onstruct" && a.onStruct === d.s) a.x += ddx; return; }
   if (pointer.dragMc) {
     const m = minecraftWin;
     const nx = clamp(pointer.x - pointer.dragMc.ox, -m.w + 120, W - 120), ny = clamp(pointer.y - pointer.dragMc.oy, 0, groundY - 60);
@@ -1104,8 +1161,9 @@ window.addEventListener("mouseup", (e) => {
   }
   if (pointer.grabbed) {
     const g = pointer.grabbed, drop = dropTarget(pointer.x, pointer.y);
-    if (drop && pointer.y < groundY - 20) { // lăsat deasupra unei aplicații / desen
+    if (drop && pointer.y < groundY - 20) { // lăsat deasupra unei aplicații / clădiri / desen
       if (drop.type === "win") { const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py; g.release(vx * 1.3, vy * 1.3); g.landWin = drop.win; } // cade pe fereastră
+      else if (drop.type === "struct") { const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py; g.release(vx * 1.3, vy * 1.3); g.landStruct = drop.s; } // cade pe clădire
       else g.stayOnDrawing(drop.d);
     } else {
       const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py;
@@ -1195,6 +1253,7 @@ function drawResizeHandles() {
 function dropTarget(x, y) {
   // orice y DEASUPRA ferestrei (până la baza ei), în coloana ei → se prinde pe ea
   for (const w of standWindows()) if (x >= w.x && x <= w.x + w.w && y <= w.y + w.h) return { type: "win", win: w };
+  for (const s of structures) { const b = structBox(s), base = s.by || groundY; if (x >= s.x - b.hw && x <= s.x + b.hw && y <= base) return { type: "struct", s }; } // pe o clădire
   for (const d of drawings) if (Math.abs(x - d.cx) < d.s * 1.6 && Math.abs(y - d.cy) < d.s * 1.6) return { type: "draw", d };
   return null;
 }
@@ -1373,7 +1432,7 @@ function updateArrows() {
   for (let i = arrows.length - 1; i >= 0; i--) {
     const a = arrows[i]; a.x += a.vx; a.life--;
     const o = a.foe;
-    if (o && !o.away && o.state !== "held" && Math.abs(a.x - o.x) < 22) { o.recoil = 14; o.stars = [{ ang: 0, r: 22 }, { ang: 2, r: 22 }, { ang: 4, r: 22 }]; if (!o.say) o.speak(pick(o.c.hitLines), 45); arrows.splice(i, 1); continue; }
+    if (o && !o.away && o.state !== "held" && o.state !== "dead" && Math.abs(a.x - o.x) < 22) { o.recoil = 14; o.stars = [{ ang: 0, r: 22 }, { ang: 2, r: 22 }, { ang: 4, r: 22 }]; if (Math.random() < 0.2) o.die(); else if (!o.say) o.speak(pick(o.c.hitLines), 45); arrows.splice(i, 1); continue; }
     if (a.life <= 0 || a.x < -30 || a.x > W + 30) arrows.splice(i, 1);
   }
 }
