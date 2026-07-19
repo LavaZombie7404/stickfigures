@@ -764,8 +764,18 @@ function star(ctx, x, y, r) {
 }
 
 // ---------- Scenă ----------
+// ===== RENDER: desen pe canvas 2D offscreen → compus prin WebGL (GPU + shader) =====
+// Fallback automat la 2D pur dacă WebGL nu e disponibil. Emoji/text rămân intacte.
 const canvas = document.getElementById("scene");
-const ctx = canvas.getContext("2d");
+let ctx, gfx = null, gl = null, glState = null, fxLevel = 0.5;
+function glSupported() { try { return !!document.createElement("canvas").getContext("webgl"); } catch (e) { return false; } }
+(function initRenderer() {
+  if (glSupported()) {
+    try { gl = canvas.getContext("webgl", { antialias: false, alpha: false, premultipliedAlpha: false }); } catch (e) { gl = null; }
+  }
+  if (gl) { gfx = document.createElement("canvas"); ctx = gfx.getContext("2d"); glState = initGL(gl); }
+  if (!gl || !glState) { gl = null; glState = null; gfx = null; ctx = canvas.getContext("2d"); } // 2D pur
+})();
 let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
@@ -804,10 +814,50 @@ const keys = new Set();                        // taste apăsate (A/D/săgeți)
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   W = window.innerWidth; H = window.innerHeight;
-  canvas.width = W * dpr; canvas.height = H * dpr;
+  const pxW = Math.round(W * dpr), pxH = Math.round(H * dpr);
+  canvas.width = pxW; canvas.height = pxH;
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  if (gl) { gfx.width = pxW; gfx.height = pxH; gl.viewport(0, 0, pxW, pxH); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   groundY = Math.max(180, H - 90);
+}
+// ---- WebGL: compilează programul de compunere + quad + textură ----
+function initGL(g) {
+  const vs = "attribute vec2 a_pos; varying vec2 v_uv; void main(){ v_uv = a_pos*0.5+0.5; gl_Position = vec4(a_pos,0.,1.); }";
+  const fs = [
+    "precision mediump float; varying vec2 v_uv; uniform sampler2D u_tex; uniform vec2 u_texel; uniform float u_fx;",
+    "void main(){",
+    "  vec3 c = texture2D(u_tex, v_uv).rgb;",
+    "  vec3 blur = (texture2D(u_tex, v_uv+vec2(u_texel.x,0.)).rgb + texture2D(u_tex, v_uv-vec2(u_texel.x,0.)).rgb + texture2D(u_tex, v_uv+vec2(0.,u_texel.y)).rgb + texture2D(u_tex, v_uv-vec2(0.,u_texel.y)).rgb)*0.25;",
+    "  c += (c-blur)*(0.7*u_fx);",                     // sharpen
+    "  vec2 d = v_uv-0.5; c *= 1.0 - dot(d,d)*(0.4*u_fx);", // vignette
+    "  gl_FragColor = vec4(c,1.0);",
+    "}"
+  ].join("\n");
+  const compile = (type, src) => { const sh = g.createShader(type); g.shaderSource(sh, src); g.compileShader(sh); if (!g.getShaderParameter(sh, g.COMPILE_STATUS)) { console.warn("GL shader:", g.getShaderInfoLog(sh)); } return sh; };
+  const prog = g.createProgram();
+  g.attachShader(prog, compile(g.VERTEX_SHADER, vs)); g.attachShader(prog, compile(g.FRAGMENT_SHADER, fs)); g.linkProgram(prog);
+  if (!g.getProgramParameter(prog, g.LINK_STATUS)) { console.warn("GL link:", g.getProgramInfoLog(prog)); return null; }
+  const buf = g.createBuffer(); g.bindBuffer(g.ARRAY_BUFFER, buf); g.bufferData(g.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), g.STATIC_DRAW);
+  const tex = g.createTexture(); g.bindTexture(g.TEXTURE_2D, tex);
+  g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
+  g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
+  g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, true);
+  return { prog, buf, tex, aPos: g.getAttribLocation(prog, "a_pos"), uTex: g.getUniformLocation(prog, "u_tex"), uTexel: g.getUniformLocation(prog, "u_texel"), uFx: g.getUniformLocation(prog, "u_fx") };
+}
+// ---- WebGL: urcă cadrul offscreen ca textură și îl desenează cu shaderul ----
+function presentGL() {
+  if (!gl || !glState) return;
+  const s = glState;
+  gl.bindTexture(gl.TEXTURE_2D, s.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, gfx);
+  gl.useProgram(s.prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, s.buf);
+  gl.enableVertexAttribArray(s.aPos); gl.vertexAttribPointer(s.aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.activeTexture(gl.TEXTURE0); gl.uniform1i(s.uTex, 0);
+  gl.uniform2f(s.uTexel, 1 / gfx.width, 1 / gfx.height);
+  gl.uniform1f(s.uFx, fxLevel);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
 function initAgents() { agents = CHARACTERS.map(c => new Agent(c, W)); }
@@ -1668,6 +1718,7 @@ window.addEventListener("keydown", (e) => {
   if (k === "r") { spawnPlayer(); return; }
   if (k === "t") { removePlayers(); return; }
   if (k === "h") { showHitboxes = !showHitboxes; return; }
+  if (k === "g") { fxLevel = fxLevel < 0.3 ? 0.5 : (fxLevel < 0.8 ? 1.0 : 0); return; } // intensitate shader WebGL
   if (k === " " || k === "spacebar") { if (player && !player.jumping && player.jumpCd <= 0) { player.jumping = true; player.jumpT = 0; } e.preventDefault(); return; }
   if (k === "a" || k === "d" || k === "arrowleft" || k === "arrowright") { keys.add(k); if (k.startsWith("arrow")) e.preventDefault(); }
 });
@@ -1906,6 +1957,7 @@ function loop() {
   agents.forEach(a => { if (a.state === "gopaint") a.draw(ctx); }); // peste fereastra Paint
   drawMinecraft(); // acoperă tot când e deschis
   if (showHitboxes) drawHitboxes();
+  presentGL(); // compune cadrul pe GPU (WebGL) — sau nimic dacă e 2D pur
   requestAnimationFrame(loop);
 }
 
