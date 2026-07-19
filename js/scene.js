@@ -120,14 +120,32 @@ class Agent {
     this.speak(pick(["Aaah!", "Sperietură!", "Nu mă prinde!"]), 60);
   }
 
-  stayOnWindow(w, px, py) { // lăsat (drag) pe o fereastră → rămâne agățat acolo
-    this.state = "climbwin"; this.climbWin = w; this.climbPhase = "hang";
-    this.x = clamp(px, 40, W - 40); this.tz = clamp(groundY - py - 130, 30, groundY - 20); // mâna la punctul de drop, corpul atârnă sub
-    this.hangTz = this.tz; this.winGY = py; this.hangTimer = 100000;
-    this.face = (w.x + w.w / 2 >= this.x) ? 1 : -1;
-    this.lie = 0; this.sleepPhase = null; this.jumping = false; this.building = null;
+  stayOnWindow(w, px, py) { // lăsat/aruncat pe o fereastră → aterizează pe podeaua ei și stă acolo
+    this.state = "onwin"; this.onWin = w;
+    this.x = clamp(px, w.x + 16, w.x + w.w - 16);
+    this.onWinVX = 0; this.onWinTimer = rand(30, 90);
+    this.lie = 0; this.sleepPhase = null; this.jumping = false; this.building = null; this.tz = 0;
     if (this.opponent) this.endFight();
-    this.speak(pick(["Aici stau! 🧗", "Cocoțat!", "Sus rămân!"]), 80);
+    this.speak(pick(["Aici stau!", "Ce loc!", "Podea nouă!"]), 80);
+  }
+  updateOnWin(W) {
+    if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
+    const w = this.onWin;
+    if (!w || !openWindows().includes(w)) { // fereastra s-a închis → cade jos
+      this.onWin = null; this.state = "thrown"; this.tzv = 0; this.tvx = 0; this.tangle = 0; this.tangVel = 0; this.bounces = 0; return;
+    }
+    const floorY = (w === paintWin && w._canvas) ? w._canvas.y + w._canvas.h : w.y + w.h - 8;
+    this.tz = groundY - floorY; // picioarele pe podeaua ferestrei
+    const lo = w.x + 16, hi = w.x + w.w - 16;
+    if (--this.onWinTimer <= 0) {
+      if (Math.random() < 0.45) { this.onWinVX = (Math.random() < 0.5 ? -1 : 1) * this.speed; this.onWinTimer = rand(40, 110); }
+      else { this.onWinVX = 0; this.onWinTimer = rand(40, 100); }
+    }
+    if (this.onWinVX) {
+      this.x += this.onWinVX; this.face = Math.sign(this.onWinVX); this.walkPhase += 0.14;
+      if (this.x <= lo || this.x >= hi) { this.onWinVX *= -1; }
+    }
+    this.x = clamp(this.x, lo, hi);
   }
   stayOnDrawing(d) { // lăsat (drag) pe un desen → rămâne agățat acolo
     this.state = "climb"; this.climbT = d; this.climbPhase = "hang";
@@ -222,6 +240,7 @@ class Agent {
     // stări care ignoră restul
     if (this.state === "held") { this.x = pointer.x; return; }
     if (this.state === "thrown") { this.updateThrown(W); return; }
+    if (this.state === "onwin") { this.updateOnWin(W); return; } // stă pe podeaua unei ferestre
     if (this.isPlayer) { this.playerUpdate(W); return; } // controlat de tine
 
     if (this.state !== "sleep" && !this.chatting) this.sleepCd--;
@@ -577,7 +596,7 @@ class Agent {
     } else if (this.state === "thrown") {
       ctx.translate(this.x, groundY - this.tz);
       ctx.rotate(this.tangle);
-    } else if (this.state === "climb" || this.state === "climbwin" || (this.state === "gopaint" && this.tz > 0)) {
+    } else if (this.state === "climb" || this.state === "climbwin" || this.state === "onwin" || (this.state === "gopaint" && this.tz > 0)) {
       ctx.translate(Math.round(this.x), Math.round(groundY - this.tz));
       if (this.squash > 0.02) { scaleY *= 1 - this.squash * 0.28; scaleX *= 1 + this.squash * 0.24; }
     } else {
@@ -608,7 +627,7 @@ class Agent {
     const winClimbHang = st === "climbwin" && this.climbPhase === "hang";
     const hanging = st === "climb" || gpClimb || winClimbMove || winClimbHang;
     const painting = (st === "draw") || (st === "gopaint" && this.gpPhase === "draw");
-    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go") || (st === "climbwin" && this.climbPhase === "go"));
+    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go") || (st === "climbwin" && this.climbPhase === "go") || (st === "onwin" && this.onWinVX));
     const running = (st === "run" || st === "leaving" || st === "scared");
     const breathe = Math.sin(this.bob) * 1.5;
     const bodyBob = walking ? Math.sin(this.walkPhase * 2) * 2 : breathe;
@@ -637,7 +656,7 @@ class Agent {
       const sway = Math.sin(this.bob * 2) * 6;
       this.legIK(ctx, -3, hipY, -6 + sway, hipY + 48, -1);
       this.legIK(ctx, 3, hipY, 9 + sway, hipY + 48, -1);
-    } else if (st === "sleep" || st === "build" || st === "idle" || painting) {
+    } else if (st === "sleep" || st === "build" || st === "idle" || painting || (st === "onwin" && !this.onWinVX)) {
       this.legIK(ctx, -4, hipY, -6, 0, -1);
       this.legIK(ctx, 4, hipY, 6, 0, -1);
     } else {
@@ -921,7 +940,7 @@ function nearestAgent(cx, cy) {
   for (const a of agents) {
     if (a.away) continue;
     let feetY = groundY;
-    if (a.state === "climb" || a.state === "climbwin" || a.state === "thrown" || (a.state === "gopaint" && a.tz > 0)) feetY = groundY - a.tz;
+    if (a.state === "climb" || a.state === "climbwin" || a.state === "onwin" || a.state === "thrown" || (a.state === "gopaint" && a.tz > 0)) feetY = groundY - a.tz;
     else if (a.jumping) feetY = groundY - Math.sin(a.jumpT * Math.PI) * 155;
     const torsoY = feetY - 70, headY = feetY - 100 - a.c.headR;
     const d = Math.min(Math.hypot(a.x - cx, torsoY - cy), Math.hypot(a.x - cx, headY - cy));
@@ -955,8 +974,11 @@ window.addEventListener("mousemove", (e) => {
     const d = pointer.dragWin, w = d.win;
     const nx = clamp(pointer.x - d.ox, -w.w + 80, W - 80), ny = clamp(pointer.y - d.oy, 24, groundY - 60);
     const ddx = nx - w.x, ddy = ny - w.y; w.x = nx; w.y = ny;
-    // stickmanii agățați pe ea zboară cu fereastra
-    for (const a of agents) if (a.state === "climbwin" && a.climbWin === w) { a.x += ddx; a.tz -= ddy; a.hangTz -= ddy; }
+    // stickmanii agățați / pe podeaua ei zboară cu fereastra
+    for (const a of agents) {
+      if (a.state === "climbwin" && a.climbWin === w) { a.x += ddx; a.tz -= ddy; a.hangTz -= ddy; }
+      else if (a.state === "onwin" && a.onWin === w) { a.x += ddx; } // tz se recalculează din fereastră
+    }
     return;
   }
   if (minecraftWin) { if (pointer.down) mcBreakAt(pointer.x, pointer.y); return; } // drag ca să spargi mai multe
@@ -2035,13 +2057,13 @@ function loop() {
   updateMinecraft();
   drawParticles();
   // desenează: agenții ținuți în mână deasupra tuturor (cei din Paint se desenează peste fereastră)
-  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (a.state !== "gopaint" && a.state !== "climbwin") a.draw(ctx); });
+  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (a.state !== "gopaint" && a.state !== "climbwin" && a.state !== "onwin") a.draw(ctx); });
   drawGroundTexts();
   drawBrowser();
   drawStopwatch();
   drawNotepad();
   drawPaint();
-  agents.forEach(a => { if (a.state === "gopaint" || a.state === "climbwin") a.draw(ctx); }); // peste ferestre
+  agents.forEach(a => { if (a.state === "gopaint" || a.state === "climbwin" || a.state === "onwin") a.draw(ctx); }); // peste ferestre
   drawMinecraft(); // acoperă tot când e deschis
   if (showHitboxes) drawHitboxes();
   presentGL(); // compune cadrul pe GPU (WebGL) — sau nimic dacă e 2D pur
