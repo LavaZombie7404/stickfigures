@@ -217,7 +217,7 @@ class Agent {
         if (this.willWater) { this.waterAnim = 70; this.state = "idle"; this.targetX = null; this.speak("Apă! 🪣", 90); }
         else this.speak(pick(["Uf! Gata.", "Am scăpat!"]), 80);
       }
-    } else if (this.burnCd <= 0 && this.waterAnim <= 0 && (this.state === "walk" || this.state === "run" || this.state === "idle")) {
+    } else if (this.burnCd <= 0 && this.waterAnim <= 0 && (this.state === "walk" || this.state === "run" || this.state === "idle" || this.state === "scared")) {
       for (const s of structures) {
         if (s.type === "campfire" && s.progress > 0.5 && !s.out && Math.abs(s.x - this.x) < 26) {
           s.hits = (s.hits || 0) + 1;
