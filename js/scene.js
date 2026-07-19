@@ -156,7 +156,6 @@ function star(ctx, x, y, r) {
 const canvas = document.getElementById("scene");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, agents = [];
-const mouse = { x: -999, y: -999, px: -999, py: -999 };
 let fightCheck = 300;
 
 function resize() {
@@ -170,28 +169,20 @@ function resize() {
 
 function initAgents() { agents = CHARACTERS.map(c => new Agent(c, W)); }
 
-// mouse spre stickman = lovire (centru la ~mijlocul corpului, pe sol)
-window.addEventListener("mousemove", (e) => {
-  mouse.px = mouse.x; mouse.py = mouse.y;
-  mouse.x = e.clientX; mouse.y = e.clientY;
-  const mvx = mouse.x - mouse.px, mvy = mouse.y - mouse.py;
-  const mspeed = Math.hypot(mvx, mvy);
-  if (mspeed < 2) return;
-  const torsoY = groundY - 70;
+// CLICK stânga pe un stickman = lovitură (nu proximitate). Lovește doar cel mai apropiat.
+function hitAt(cx, cy) {
+  let best = null, bestD = 1e9;
   for (const a of agents) {
-    const dx = a.x - mouse.x, dy = torsoY - mouse.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 90) {
-      const dot = (mvx * dx + mvy * dy) / (mspeed * (dist || 1));
-      if (dot > 0.2) a.getHit(mouse.px);
-    }
+    const torsoY = groundY - 70;
+    const headY = groundY - 90 - a.c.headR;
+    const d = Math.min(Math.hypot(a.x - cx, torsoY - cy), Math.hypot(a.x - cx, headY - cy));
+    if (d < bestD) { bestD = d; best = a; }
   }
-});
-window.addEventListener("touchmove", (e) => {
-  const t = e.touches[0]; if (!t) return;
-  mouse.px = mouse.x; mouse.x = t.clientX;
-  const torsoY = groundY - 70;
-  for (const a of agents) if (Math.hypot(a.x - t.clientX, torsoY - t.clientY) < 80) a.getHit(mouse.px);
+  if (best && bestD < 75) best.getHit(cx);
+}
+window.addEventListener("click", (e) => hitAt(e.clientX, e.clientY));
+window.addEventListener("touchstart", (e) => {
+  const t = e.touches[0]; if (t) hitAt(t.clientX, t.clientY);
 }, { passive: true });
 
 function maybeStartFight() {
