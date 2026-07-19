@@ -966,7 +966,7 @@ let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
 let adventureCd = rand(1800, 4200);
-let autoAdventure = true;   // dacă pleacă singuri în expediții (toggle din panou)
+let autoAdventure = false;  // expedițiile automate sunt OPRITE implicit (toggle din panou)
 let chromeAutoCd = rand(2400, 5400); // ei deschid Chrome singuri din când în când
 let expedition = null;      // {place, activity}
 let showHitboxes = false;
