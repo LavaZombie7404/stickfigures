@@ -29,6 +29,7 @@ class Agent {
     this.lie = 0;               // 0 = în picioare, 1 = culcat
     this.sleepPhase = null;     // down | rest | up
     this.sleepTimer = 0;
+    this.sleepCd = rand(3600, 18000); // ~1-5 min până la primul somn (60fps)
   }
 
   speak(text, ttl = 120) { this.say = { text, ttl }; }
@@ -62,6 +63,7 @@ class Agent {
     if (this.hitCooldown > 0) this.hitCooldown--;
     if (this.recoil > 0.5) this.recoil *= 0.85; else this.recoil = 0;
     this.stars.forEach(s => { s.ang += 0.2; s.r *= 0.96; });
+    if (this.state !== "sleep") this.sleepCd--;
 
     // text (rar) + expirare
     if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
@@ -104,9 +106,8 @@ class Agent {
     }
     else { // walk / idle
       if (this.targetX === null || this.stateTimer-- <= 0) {
-        const r = Math.random();
-        if (r < 0.07) { this.state = "sleep"; this.sleepPhase = "down"; this.lie = 0; this.speak("...", 60); }
-        else if (r < 0.32) { this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); }
+        if (this.sleepCd <= 0) { this.state = "sleep"; this.sleepPhase = "down"; this.lie = 0; this.speak("...", 60); this.sleepCd = rand(14400, 21600); } // ~4-6 min până la următorul
+        else if (Math.random() < 0.3) { this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); }
         else { this.state = "walk"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 300); }
       }
       if (this.state === "walk" && this.targetX !== null) {
@@ -127,7 +128,8 @@ class Agent {
 
     ctx.save();
     ctx.translate(x, feetY);
-    if (this.lie > 0) ctx.rotate(this.lie * (Math.PI / 2) * -this.face); // se lasă pe pământ
+    if (this.lie > 0) ctx.rotate(this.lie * (Math.PI / 2)); // se lasă pe pământ
+    ctx.scale(this.face, 1); // se orientează spre direcția de mers (nu doar dreapta)
 
     ctx.strokeStyle = c.color; ctx.fillStyle = c.color;
     ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round";
@@ -159,9 +161,9 @@ class Agent {
     // ---- brațe articulate (umăr → cot → mână) ----
     const upper = 20, fore = 18;
     if (this.state === "fight" && this.attacker) {
-      const dir = this.face;
-      ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(20 * dir, shoulderY + 2); ctx.lineTo(38 * dir, shoulderY - 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(-10 * dir, shoulderY + 16); ctx.lineTo(-16 * dir, shoulderY + 30); ctx.stroke();
+      // pumn spre față (+x local; scale(face) îl orientează corect)
+      ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(20, shoulderY + 2); ctx.lineTo(38, shoulderY - 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(-10, shoulderY + 16); ctx.lineTo(-16, shoulderY + 30); ctx.stroke();
     } else {
       for (const side of [-1, 1]) {
         const p = this.walkPhase + (side < 0 ? Math.PI : 0);
