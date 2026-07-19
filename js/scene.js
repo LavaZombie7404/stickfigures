@@ -308,25 +308,56 @@ class Agent {
       }
     }
     else if (this.state === "gopaint") {
-      if (!paintWin) { this._pd = null; this._pdTargets = null; this.state = "walk"; this.targetX = null; return; }
-      const tx = clamp(paintWin.x + paintWin.w / 2, 70, W - 70);
-      if (!this._pd) { // merge spre Paint
-        const dx = tx - this.x;
-        if (Math.abs(dx) < 42) {
-          const cv = paintWin._canvas, cw = cv ? cv.w : 300, ch = cv ? cv.h : 200;
-          this._pd = makeDoodle(rand(cw * 0.22, cw * 0.78), rand(ch * 0.28, ch * 0.72), rand(cw * 0.1, cw * 0.19), this.c.color);
-          this._pdReveal = 0; this._pdTimer = Math.max(60, this._pd.totalPts * 1.4);
+      const cv = paintWin && paintWin._canvas;
+      if (!cv) { // Paint închis → cade / renunță
+        this._pd = null; this._pdTargets = null;
+        if (this.tz > 0) { this.gpPhase = "fall"; }
+        else { this.gpPhase = undefined; this.gpTargetX = undefined; this.state = "walk"; this.targetX = null; return; }
+      }
+      if (this.gpPhase === undefined) this.gpPhase = "go";
+      if (this.gpPhase === "go") { // merge la un x în pânză
+        if (this.gpTargetX === undefined) this.gpTargetX = clamp(rand(cv.x + 70, cv.x + cv.w - 70), 70, W - 70);
+        const dx = this.gpTargetX - this.x;
+        if (Math.abs(dx) < 12) { this.gpPhase = "up"; this.tz = 0; this.perchTz = clamp(groundY - (cv.y + rand(cv.h * 0.32, cv.h * 0.82)), 60, groundY - 40); }
+        else if (!this.jumping) { this.x += Math.sign(dx) * this.speed * 1.9; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.17; }
+      } else if (this.gpPhase === "up") { // se urcă în aplicație
+        this.tz += (this.perchTz - this.tz) * 0.2;
+        if (this.perchTz - this.tz < 4) {
+          this.tz = this.perchTz;
+          const handSX = this.x + this.face * 22, handSY = (groundY - this.tz) - 130;
+          const size = rand(cv.w * 0.05, cv.w * 0.09);
+          const lcx = clamp(handSX - cv.x, size + 4, cv.w - size - 4), lcy = clamp(handSY - cv.y, size + 4, cv.h - size - 4);
+          this._pd = makeDoodle(lcx, lcy, size, this.c.color);
+          this._pdReveal = 0; this._pdTimer = Math.max(50, this._pd.totalPts * 1.2);
           this._pdTargets = this._pd.strokes.map(s => { const o = { color: this.c.color, w: 3, pts: [] }; paintWin.strokes.push(o); return { src: s, dst: o }; });
-          this.face = 1; this.speak(pick(["Și eu desenez! 🎨", "Arta mea!", "Uite ce fac!"]), 100);
-        } else if (!this.jumping) {
-          const step = Math.sign(dx) * this.speed * 1.7; this.face = dx >= 0 ? 1 : -1;
-          if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.16; }
+          this.gpPhase = "draw"; this.speak(pick(["Și eu! 🎨", "Uite ce fac!", "Arta mea!"]), 90);
         }
-      } else { // desenează în pânză
+      } else if (this.gpPhase === "draw") { // desenează perched, în pânză
         this._pdReveal += this._pd.totalPts / this._pdTimer;
         const cnt = Math.floor(this._pdReveal); let used = 0;
         for (const t of this._pdTargets) { const take = clamp(cnt - used, 0, t.src.length); t.dst.pts = t.src.slice(0, take); used += t.src.length; }
-        if (cnt >= this._pd.totalPts) { this._pd = null; this._pdTargets = null; this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); this.speak(pick(["Gata! 🎨", "Frumos, nu?"]), 80); }
+        if (cnt >= this._pd.totalPts) { this._pd = null; this._pdTargets = null; this.gpPhase = "fall"; this.climbV = 0; this.speak(pick(["Gata! 🎨", "Frumos!"]), 80); }
+      } else { // cade jos
+        this.climbV += 0.9; this.tz -= this.climbV;
+        if (this.tz <= 0) { this.tz = 0; this.gpPhase = undefined; this.gpTargetX = undefined; this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 5); }
+      }
+    }
+    else if (this.state === "climb") { // se urcă pe un desen de pe wallpaper
+      const d = this.climbT;
+      if (!d || !drawings.includes(d)) { this.state = "walk"; this.climbT = null; this.tz = 0; this.targetX = null; return; }
+      if (this.climbPhase === "go") {
+        const dx = d.cx - this.x;
+        if (Math.abs(dx) < 10) { this.climbPhase = "up"; this.tz = 0; this.hangTz = clamp(groundY - d.cy - 130, 30, groundY - 30); }
+        else if (!this.jumping) { this.x += Math.sign(dx) * this.speed * 1.9; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.17; }
+      } else if (this.climbPhase === "up") { // sare sus, se agață
+        this.tz += (this.hangTz - this.tz) * 0.22;
+        if (this.hangTz - this.tz < 4) { this.tz = this.hangTz; this.climbPhase = "hang"; this.hangTimer = 300; this.face = d.cx >= this.x ? 1 : -1; this.speak(pick(["Sus! 🧗", "M-am agățat!"]), 70); }
+      } else if (this.climbPhase === "hang") { // se ține cu o mână 5s
+        if (--this.hangTimer <= 0) { this.climbPhase = "fall"; this.climbV = 0; }
+        else if (!this.say && Math.random() < 0.008) this.speak(pick(["Nu privi în jos!", "Uau!", "Ajutor?"]), 70);
+      } else { // cade jos
+        this.climbV += 0.9; this.tz -= this.climbV;
+        if (this.tz <= 0) { this.tz = 0; this.state = "walk"; this.climbT = null; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 6); }
       }
     }
     else if (this.state === "run") {
@@ -384,9 +415,12 @@ class Agent {
             const m = { house: ["Construiesc!", "O casă!"], tower: ["Un turn!", "Sus!"], tree: ["Un copac!", "Verde!"], campfire: ["Un foc!", "Cald!"] };
             this.speak(pick(m[type]), 120);
           } else if (paintWin && r < 0.03) {
-            this._pd = null; this._pdTargets = null; this.state = "gopaint"; this.targetX = null;
-            this.speak(pick(["La Paint!", "Merg să desenez!", "Și eu vreau!"]), 90);
-          } else if (r < 0.055) {
+            this._pd = null; this._pdTargets = null; this.gpPhase = undefined; this.gpTargetX = undefined; this.state = "gopaint"; this.targetX = null;
+            this.speak(pick(["La Paint!", "Mă urc să desenez!", "Și eu vreau!"]), 90);
+          } else if (drawings.length && r < 0.045) {
+            this.climbT = pick(drawings); this.climbPhase = "go"; this.state = "climb"; this.targetX = null;
+            this.speak(pick(["Mă urc pe desen! 🧗", "Sus pe el!", "Cățărare!"]), 90);
+          } else if (r < 0.07) {
             const cx = clamp(this.x + rand(-40, 40), 90, W - 90);
             const cy = rand(90, Math.max(130, groundY - 190));
             this.doodle = makeDoodle(cx, cy, rand(30, 48), this.c.color);
@@ -495,6 +529,9 @@ class Agent {
     } else if (this.state === "thrown") {
       ctx.translate(this.x, groundY - this.tz);
       ctx.rotate(this.tangle);
+    } else if (this.state === "climb" || (this.state === "gopaint" && this.tz > 0)) {
+      ctx.translate(Math.round(this.x), Math.round(groundY - this.tz));
+      if (this.squash > 0.02) { scaleY *= 1 - this.squash * 0.28; scaleX *= 1 + this.squash * 0.24; }
     } else {
       const jumpY = this.jumping ? Math.sin(this.jumpT * Math.PI) * 155 : 0;
       ctx.translate(Math.round(this.x - (this.recoil || 0) * this.face), Math.round(groundY) - jumpY);
@@ -518,8 +555,10 @@ class Agent {
 
   drawSkeleton(ctx) {
     const c = this.c, st = this.state;
-    const painting = (st === "draw") || (st === "gopaint" && this._pd);
-    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && !this._pd));
+    const gpClimb = st === "gopaint" && (this.gpPhase === "up" || this.gpPhase === "fall");
+    const hanging = st === "climb" || gpClimb;
+    const painting = (st === "draw") || (st === "gopaint" && this.gpPhase === "draw");
+    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go"));
     const running = (st === "run" || st === "leaving" || st === "scared");
     const breathe = Math.sin(this.bob) * 1.5;
     const bodyBob = walking ? Math.sin(this.walkPhase * 2) * 2 : breathe;
@@ -544,6 +583,10 @@ class Agent {
     } else if (striking && this.attackType === "kick") {
       this.legIK(ctx, -4, hipY, -8, 0, -1);
       ctx.beginPath(); ctx.moveTo(4, hipY); ctx.lineTo(26, hipY + 2); ctx.lineTo(52, hipY - 8); ctx.stroke();
+    } else if (hanging) {
+      const sway = Math.sin(this.bob * 2) * 6;
+      this.legIK(ctx, -3, hipY, -6 + sway, hipY + 48, -1);
+      this.legIK(ctx, 3, hipY, 9 + sway, hipY + 48, -1);
     } else if (st === "sleep" || st === "build" || st === "idle" || painting) {
       this.legIK(ctx, -4, hipY, -6, 0, -1);
       this.legIK(ctx, 4, hipY, 6, 0, -1);
@@ -576,6 +619,12 @@ class Agent {
     } else if (st === "build") {
       const hm = Math.sin(this.bob * 5) * 12;
       seg(14, -8 + hm, 22, -22 + hm); seg(-14, -6 - hm, -22, -18 - hm);
+    } else if (st === "climb" && this.climbPhase === "hang") {
+      const sway = Math.sin(this.bob * 2) * 4; // o mână ține sus, una atârnă
+      seg(6, -22, 8, -42); seg(-8 + sway, 16, -12 + sway, 30);
+    } else if (hanging) {
+      const w = Math.sin(this.bob * 3) * 4; // ambele mâini sus (urcă / cade)
+      seg(10 + w, -20, 14 + w, -40); seg(-10 - w, -20, -14 - w, -40);
     } else if (painting) {
       const w = Math.sin(this.bob * 6) * 5; // mâna se mișcă (desenează)
       seg(16 + w, -18, 28 + w, -30 + w); seg(-10, 14, -14, 26);
@@ -976,7 +1025,7 @@ function makeDoodle(cx, cy, s, color) {
   } else { // squiggle
     const pts = []; for (let i = 0; i <= 22; i++) pts.push({ x: cx - s + i * (2 * s / 22), y: cy + Math.sin(i * 0.85) * s * 0.4 }); strokes.push(pts);
   }
-  return { strokes, color, totalPts: strokes.reduce((a, st) => a + st.length, 0) };
+  return { strokes, color, totalPts: strokes.reduce((a, st) => a + st.length, 0), cx, cy, s };
 }
 function drawDoodle(d, reveal) {
   const count = reveal === undefined ? d.totalPts : reveal;
@@ -1602,13 +1651,14 @@ function loop() {
   maybeStartFight();
   agents.forEach(a => a.update(W));
   drawParticles();
-  // desenează: agenții ținuți în mână deasupra tuturor
-  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => a.draw(ctx));
+  // desenează: agenții ținuți în mână deasupra tuturor (cei din Paint se desenează peste fereastră)
+  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (a.state !== "gopaint") a.draw(ctx); });
   drawGroundTexts();
   drawBrowser();
   drawStopwatch();
   drawNotepad();
   drawPaint();
+  agents.forEach(a => { if (a.state === "gopaint") a.draw(ctx); }); // peste fereastra Paint
   if (showHitboxes) drawHitboxes();
   requestAnimationFrame(loop);
 }
