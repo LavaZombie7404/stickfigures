@@ -858,6 +858,7 @@ function glSupported() { try { return !!document.createElement("canvas").getCont
 // expuse pentru inspecție/feedback (ex. Playwright)
 window.setFx = (v) => { fxLevel = v; };
 window.getRenderInfo = () => ({ webgl: !!gl, fx: fxLevel });
+window.getMinecraft = () => minecraftWin;
 let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
@@ -962,7 +963,15 @@ function nearestAgent(cx, cy) {
 window.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   pointer.down = true; pointer.downX = e.clientX; pointer.downY = e.clientY; pointer.moved = 0;
-  if (minecraftWin) { mcBreakAt(e.clientX, e.clientY); return; } // spargi blocuri cu click
+  if (minecraftWin) {
+    const m = minecraftWin;
+    if (e.clientX >= m.x && e.clientX <= m.x + m.w && e.clientY >= m.y && e.clientY <= m.y + m.h) { // doar în fereastra Minecraft
+      if (e.clientX >= m.x + m.w - 22 && e.clientY >= m.y + m.h - 22) { pointer.resizeMc = { ox: e.clientX, t0: m.tile }; return; } // scalare
+      if (e.clientX <= m.x + m.w - 30 && e.clientY <= m.y + 26) { pointer.dragMc = { ox: e.clientX - m.x, oy: e.clientY - m.y }; return; } // mută
+      pointer.mcBreaking = true; mcBreakAt(e.clientX, e.clientY); return; // spargi blocuri
+    }
+    // în afara Minecraft → interacțiune normală cu desktopul
+  }
   // redimensionare din colțul dreapta-jos
   const rw = resizeHandleAt(e.clientX, e.clientY);
   if (rw) { pointer.resizeWin = { win: rw, ox: e.clientX, oy: e.clientY, w0: rw.w, h0: rw.h }; return; }
@@ -1003,7 +1012,14 @@ window.addEventListener("mousemove", (e) => {
     }
     return;
   }
-  if (minecraftWin) { if (pointer.down) mcBreakAt(pointer.x, pointer.y); return; } // drag ca să spargi mai multe
+  if (pointer.resizeMc) { // scalare uniformă Minecraft (mărimea blocurilor)
+    const m = minecraftWin, nt = clamp(pointer.resizeMc.t0 + (pointer.x - pointer.resizeMc.ox) / m.cols, 12, 46), ratio = nt / m.tile;
+    m.tile = nt; m.w = m.cols * nt; m.h = m.rows * nt;
+    for (const mob of m.mobs) { mob.px *= ratio; mob.py *= ratio; mob.vy *= ratio; }
+    return;
+  }
+  if (pointer.dragMc) { const m = minecraftWin; m.x = clamp(pointer.x - pointer.dragMc.ox, -m.w + 120, W - 120); m.y = clamp(pointer.y - pointer.dragMc.oy, 0, groundY - 60); return; }
+  if (pointer.mcBreaking) { mcBreakAt(pointer.x, pointer.y); return; } // drag în Minecraft ca să spargi mai multe
   if (pointer.paint && paintWin && paintWin.cur) {
     const c = paintWin._canvas;
     paintWin.cur.pts.push({ x: clamp(pointer.x, c.x, c.x + c.w) - c.x, y: clamp(pointer.y, c.y, c.y + c.h) - c.y });
@@ -1019,6 +1035,9 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("mouseup", (e) => {
   if (e.button !== 0) return;
+  if (pointer.resizeMc) { pointer.resizeMc = null; pointer.down = false; return; }
+  if (pointer.dragMc) { pointer.dragMc = null; pointer.down = false; return; }
+  if (pointer.mcBreaking) { pointer.mcBreaking = false; pointer.down = false; return; }
   if (pointer.resizeWin) { pointer.resizeWin = null; pointer.down = false; return; }
   if (pointer.dragWin) { pointer.dragWin = null; pointer.down = false; return; }
   if (pointer.paint) {
@@ -1276,9 +1295,9 @@ function drawWallpaper() {
 // tipuri bloc: 0 aer, 1 iarbă, 2 pământ, 3 piatră, 4 lemn, 5 frunze, 6 scânduri
 function openMinecraft() {
   if (window.recallAdventurers) window.recallAdventurers(); // toți din expediție vin înapoi
-  const x = 12, y = 24, w = W - 24, h = groundY - 40, t = 30;
-  const cols = Math.floor(w / t), rows = Math.floor(h / t);
-  const m = { x, y, w, h, tile: t, cols, rows, wood: 0, grid: [], groundRow: 0 };
+  const x = 12, y = 24, t = 30;
+  const cols = Math.floor((W - 24) / t), rows = Math.floor((groundY - 40) / t);
+  const m = { x, y, w: cols * t, h: rows * t, tile: t, cols, rows, wood: 0, grid: [], groundRow: 0 };
   mcGenWorld(m);
   m.mobs = agents.map(a => ({
     color: a.c.color, hollow: !!a.c.hollowHead, crown: !!a.c.crown, headR: a.c.headR || 20,
@@ -1451,6 +1470,9 @@ function drawMinecraft() {
   const hov = pointer.x >= xb.x && pointer.x <= xb.x + xb.s && pointer.y >= xb.y && pointer.y <= xb.y + xb.s;
   ctx.fillStyle = hov ? "#e81123" : "#4a4b50"; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(xb.x, xb.y, xb.s, xb.s, 5); else ctx.rect(xb.x, xb.y, xb.s, xb.s); ctx.fill();
   ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xb.x + 5, xb.y + 5); ctx.lineTo(xb.x + xb.s - 5, xb.y + xb.s - 5); ctx.moveTo(xb.x + xb.s - 5, xb.y + 5); ctx.lineTo(xb.x + 5, xb.y + xb.s - 5); ctx.stroke();
+  // mâner de scalare (colț dreapta-jos)
+  ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+  for (let i = 0; i < 3; i++) { const o = 5 + i * 4; ctx.beginPath(); ctx.moveTo(m.x + m.w - 5 - o, m.y + m.h - 5); ctx.lineTo(m.x + m.w - 5, m.y + m.h - 5 - o); ctx.stroke(); }
   ctx.restore();
 }
 
@@ -1727,7 +1749,7 @@ function startFightBetween(a, b) {
 }
 // touch: tap = lovitură (fără drag pt. simplitate)
 window.addEventListener("touchstart", (e) => { const t = e.touches[0]; if (t) { pointer.x = t.clientX; pointer.y = t.clientY; const a = nearestAgent(t.clientX, t.clientY); if (a) a.getHit(t.clientX); } }, { passive: true });
-window.addEventListener("contextmenu", (e) => { e.preventDefault(); if (minecraftWin) { mcPlaceAt(e.clientX, e.clientY); return; } const a = nearestAgent(e.clientX, e.clientY); if (a && window.openChat) window.openChat(a); });
+window.addEventListener("contextmenu", (e) => { e.preventDefault(); if (minecraftWin && e.clientX >= minecraftWin.x && e.clientX <= minecraftWin.x + minecraftWin.w && e.clientY >= minecraftWin.y && e.clientY <= minecraftWin.y + minecraftWin.h) { mcPlaceAt(e.clientX, e.clientY); return; } const a = nearestAgent(e.clientX, e.clientY); if (a && window.openChat) window.openChat(a); });
 
 // aventură
 function avail(a) { return !a.away && !a.isPlayer && !a.chatting && a.state !== "sleep" && a.state !== "leaving" && a.state !== "held" && a.state !== "thrown" && a.state !== "scared"; }
