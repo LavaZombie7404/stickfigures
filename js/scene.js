@@ -1,10 +1,12 @@
-// Scenă full-screen: stick-figures cu membre articulate care merg pe pământ.
-// Uneori se culcă ~20s (nu se bat). Click stânga = lovitură. Vorbesc rar.
+// Scenă: stick-figures cu membre articulate pe pământ. Merg, uneori ALEARGĂ, se bat cu
+// pumni ȘI picioare, uneori CONSTRUIESC o casă, uneori se culcă (~5 min, pe spate/față).
+// Click stânga = lovitură. Click dreapta = chat (window.openChat).
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 let groundY = 0;
+let structures = []; // casele construite {x, color, progress}
 
 class Agent {
   constructor(c, W) {
@@ -12,7 +14,7 @@ class Agent {
     this.x = rand(120, W - 120);
     this.face = Math.random() < 0.5 ? 1 : -1;
     this.speed = rand(0.55, 0.95);
-    this.state = "walk";        // walk | idle | fight | hit | sleep
+    this.state = "walk";  // walk | run | idle | fight | hit | sleep | build
     this.targetX = null;
     this.walkPhase = Math.random() * Math.PI * 2;
     this.bob = Math.random() * Math.PI * 2;
@@ -22,14 +24,21 @@ class Agent {
     this.opponent = null;
     this.punchTimer = 0;
     this.attacker = false;
+    this.attackType = "punch";
+    this.attackAnim = 0;
     this.recoil = 0;
     this.stars = [];
     this.say = null;
     this.chatterTimer = rand(300, 900);
-    this.lie = 0;               // 0 = în picioare, 1 = culcat
-    this.sleepPhase = null;     // down | rest | up
+    this.lie = 0;
+    this.sleepPhase = null;
     this.sleepTimer = 0;
-    this.sleepCd = rand(3600, 18000); // ~1-5 min până la primul somn (60fps)
+    this.sleepDir = 1;
+    this.sleepCd = rand(3600, 18000);
+    this.chatting = false;
+    this.building = null;
+    this.buildTimer = 0;
+    this.buildDur = 0;
   }
 
   speak(text, ttl = 120) { this.say = { text, ttl }; }
@@ -39,7 +48,7 @@ class Agent {
     this.hitCooldown = 40;
     this.state = "hit";
     this.stateTimer = 40;
-    this.lie = 0; this.sleepPhase = null;
+    this.lie = 0; this.sleepPhase = null; this.building = null;
     this.vx = (this.x >= fromX ? 1 : -1) * 10;
     this.recoil = 16;
     this.stars = [];
@@ -49,8 +58,8 @@ class Agent {
   }
 
   startFight(other) {
-    this.state = "fight"; this.opponent = other; this.stateTimer = rand(260, 460);
-    this.attacker = true; this.punchTimer = 30;
+    this.state = "fight"; this.opponent = other; this.stateTimer = rand(300, 520);
+    this.attacker = true; this.punchTimer = 34;
     this.speak(pick(this.c.fightLines), 90);
   }
   endFight() {
@@ -61,25 +70,43 @@ class Agent {
   update(W) {
     this.bob += 0.06;
     if (this.hitCooldown > 0) this.hitCooldown--;
+    if (this.attackAnim > 0) this.attackAnim--;
     if (this.recoil > 0.5) this.recoil *= 0.85; else this.recoil = 0;
     this.stars.forEach(s => { s.ang += 0.2; s.r *= 0.96; });
-    if (this.state !== "sleep") this.sleepCd--;
+    if (this.state !== "sleep" && !this.chatting) this.sleepCd--;
 
-    // text (rar) + expirare
     if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
     if (--this.chatterTimer <= 0) {
-      this.chatterTimer = rand(700, 1500); // ~12-25s între replici
+      this.chatterTimer = rand(700, 1500);
       if (this.state === "walk" || this.state === "idle") this.speak(pick(this.c.chatter), 120);
     }
+
+    if (this.chatting) { this.state = "idle"; this.face = 1; return; }
 
     if (this.state === "hit") {
       this.x += this.vx; this.vx *= 0.9;
       if (--this.stateTimer <= 0) { this.state = "walk"; this.stateTimer = rand(60, 160); this.targetX = null; }
     }
+    else if (this.state === "build") {
+      if (this.building) this.building.progress = Math.min(1, 1 - this.buildTimer / this.buildDur);
+      if (--this.buildTimer <= 0) {
+        if (this.building) this.building.progress = 1;
+        this.building = null; this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140);
+        this.speak(pick(["Gata!", "Frumoasă!", "Casa mea! 🏠"]), 100);
+      }
+    }
+    else if (this.state === "run") {
+      if (this.targetX === null) { this.state = "walk"; this.stateTimer = rand(40, 100); }
+      else {
+        const dx = this.targetX - this.x;
+        if (Math.abs(dx) < 6) { this.targetX = null; this.state = "walk"; this.stateTimer = rand(40, 120); }
+        else { this.x += Math.sign(dx) * this.speed * 2.6; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.34; }
+      }
+    }
     else if (this.state === "sleep") {
       if (this.sleepPhase === "down") {
         this.lie = Math.min(1, this.lie + 0.04);
-        if (this.lie >= 1) { this.sleepPhase = "rest"; this.sleepTimer = 1200; } // ~20s
+        if (this.lie >= 1) { this.sleepPhase = "rest"; this.sleepTimer = 1200; }
       } else if (this.sleepPhase === "rest") {
         if (--this.sleepTimer <= 0) this.sleepPhase = "up";
         else if (!this.say && Math.random() < 0.004) this.speak("Zzz", 110);
@@ -94,21 +121,33 @@ class Agent {
       const dx = o.x - this.x;
       const d = Math.abs(dx) || 1;
       this.face = dx >= 0 ? 1 : -1;
-      if (d > 64) { this.x += Math.sign(dx) * (this.speed + 0.5); this.walkPhase += 0.25; }
+      if (d > 66) { this.x += Math.sign(dx) * (this.speed + 0.5); this.walkPhase += 0.25; }
       else if (this.attacker && this.punchTimer-- <= 0) {
-        this.punchTimer = rand(28, 46);
-        o.recoil = 14;
+        this.punchTimer = rand(30, 50);
+        this.attackType = Math.random() < 0.5 ? "punch" : "kick";
+        this.attackAnim = 16;
+        o.recoil = this.attackType === "kick" ? 18 : 14;
         o.stars = [{ ang: 0, r: 22 }, { ang: 2, r: 22 }, { ang: 4, r: 22 }];
         if (!o.say) o.speak(pick(o.c.hitLines), 45);
-        this.attacker = false; o.attacker = true; o.punchTimer = rand(20, 34);
+        this.attacker = false; o.attacker = true; o.punchTimer = rand(24, 40);
       }
       if (--this.stateTimer <= 0) this.endFight();
     }
-    else { // walk / idle
+    else { // walk / idle — alege ce urmează
       if (this.targetX === null || this.stateTimer-- <= 0) {
-        if (this.sleepCd <= 0) { this.state = "sleep"; this.sleepPhase = "down"; this.lie = 0; this.speak("...", 60); this.sleepCd = rand(14400, 21600); } // ~4-6 min până la următorul
-        else if (Math.random() < 0.3) { this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); }
-        else { this.state = "walk"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 300); }
+        if (this.sleepCd <= 0) {
+          this.state = "sleep"; this.sleepPhase = "down"; this.lie = 0;
+          this.sleepDir = Math.random() < 0.5 ? 1 : -1; this.speak("...", 60); this.sleepCd = rand(14400, 21600);
+        } else {
+          const r = Math.random();
+          if (r < 0.02 && structures.length < 5) {
+            this.state = "build"; this.buildDur = rand(340, 480); this.buildTimer = this.buildDur;
+            const s = { x: this.x, color: this.c.color, progress: 0 }; structures.push(s); this.building = s;
+            this.speak(pick(["Construiesc!", "O casă!", "Hai să construim!"]), 120);
+          } else if (r < 0.22) { this.state = "run"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 260); this.speak(pick(["Aici!", "Repede!", "Hop!"]), 60); }
+          else if (r < 0.45) { this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); }
+          else { this.state = "walk"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 300); }
+        }
       }
       if (this.state === "walk" && this.targetX !== null) {
         const dx = this.targetX - this.x;
@@ -122,14 +161,14 @@ class Agent {
 
   draw(ctx) {
     const c = this.c;
-    const walking = (this.state === "walk" || this.state === "fight");
+    const walking = (this.state === "walk" || this.state === "fight" || this.state === "run");
     const feetY = Math.round(groundY);
     const x = Math.round(this.x - (this.recoil || 0) * this.face);
 
     ctx.save();
     ctx.translate(x, feetY);
-    if (this.lie > 0) ctx.rotate(this.lie * (Math.PI / 2)); // se lasă pe pământ
-    ctx.scale(this.face, 1); // se orientează spre direcția de mers (nu doar dreapta)
+    if (this.lie > 0) ctx.rotate(this.lie * (Math.PI / 2) * this.sleepDir);
+    ctx.scale(this.face, 1);
 
     ctx.strokeStyle = c.color; ctx.fillStyle = c.color;
     ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round";
@@ -137,60 +176,77 @@ class Agent {
     const headR = c.headR;
     const hipY = -50;
     const breathe = Math.sin(this.bob) * 1.5;
+    const leanX = this.state === "run" ? 7 : 0; // aplecare la alergat
     const shoulderY = hipY - 42 + breathe;
     const headCy = shoulderY - 8 - headR;
+    const striking = this.state === "fight" && this.attackAnim > 0;
 
-    // ---- picioare articulate (șold → genunchi → picior) ----
-    const thigh = 25, shin = 25;
-    for (const side of [-1, 1]) {
-      const p = this.walkPhase + (side < 0 ? 0 : Math.PI);
-      const swing = walking ? Math.sin(p) * 0.5 : 0;
-      const lift = walking ? Math.max(0, Math.sin(p)) * 0.7 : 0;
-      const hipX = side * 3;
-      const kneeX = hipX + Math.sin(swing) * thigh;
-      const kneeY = hipY + Math.cos(swing) * thigh;
-      const shinA = swing - lift;
-      const footX = kneeX + Math.sin(shinA) * shin;
-      const footY = kneeY + Math.cos(shinA) * shin;
-      ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(kneeX, kneeY); ctx.lineTo(footX, footY); ctx.stroke();
+    // ---- picioare ----
+    if (striking && this.attackType === "kick") {
+      ctx.beginPath(); ctx.moveTo(-4, hipY); ctx.lineTo(-8, 0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(4, hipY); ctx.lineTo(26, hipY + 2); ctx.lineTo(50, hipY - 6); ctx.stroke();
+    } else {
+      const thigh = 25, shin = 25;
+      for (const side of [-1, 1]) {
+        const p = this.walkPhase + (side < 0 ? 0 : Math.PI);
+        const swing = walking ? Math.sin(p) * (this.state === "run" ? 0.7 : 0.5) : 0;
+        const lift = walking ? Math.max(0, Math.sin(p)) * (this.state === "run" ? 0.9 : 0.7) : 0;
+        const hipX = side * 3;
+        const kneeX = hipX + Math.sin(swing) * thigh;
+        const kneeY = hipY + Math.cos(swing) * thigh;
+        const shinA = swing - lift;
+        ctx.beginPath();
+        ctx.moveTo(hipX, hipY);
+        ctx.lineTo(kneeX, kneeY);
+        ctx.lineTo(kneeX + Math.sin(shinA) * shin, kneeY + Math.cos(shinA) * shin);
+        ctx.stroke();
+      }
     }
 
     // ---- corp ----
-    ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(0, shoulderY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(leanX, shoulderY); ctx.stroke();
 
-    // ---- brațe articulate (umăr → cot → mână) ----
-    const upper = 20, fore = 18;
-    if (this.state === "fight" && this.attacker) {
-      // pumn spre față (+x local; scale(face) îl orientează corect)
-      ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(20, shoulderY + 2); ctx.lineTo(38, shoulderY - 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(-10, shoulderY + 16); ctx.lineTo(-16, shoulderY + 30); ctx.stroke();
+    // ---- brațe ----
+    const upper = 20, fore = 18, sx = leanX, sy = shoulderY + 4;
+    if (this.state === "build") {
+      const hammer = Math.sin(this.bob * 5) * 8;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 14, sy - 12 + hammer); ctx.lineTo(sx + 24, sy - 24 + hammer); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - 12, sy - 10 - hammer); ctx.lineTo(sx - 20, sy - 20 - hammer); ctx.stroke();
+    } else if (striking && this.attackType === "punch") {
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 22, sy - 2); ctx.lineTo(sx + 42, sy - 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - 10, sy + 10); ctx.lineTo(sx - 4, sy - 6); ctx.stroke();
+    } else if (this.state === "fight") {
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 12, sy + 8); ctx.lineTo(sx + 20, sy - 6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - 8, sy + 10); ctx.lineTo(sx - 2, sy - 2); ctx.stroke();
     } else {
       for (const side of [-1, 1]) {
         const p = this.walkPhase + (side < 0 ? Math.PI : 0);
-        const swing = walking ? Math.sin(p) * 0.45 : Math.sin(this.bob + side) * 0.1;
-        const elbowX = Math.sin(swing) * upper;
-        const elbowY = shoulderY + 4 + Math.cos(swing) * upper;
+        const swing = walking ? Math.sin(p) * (this.state === "run" ? 0.7 : 0.45) : Math.sin(this.bob + side) * 0.1;
+        const elbowX = sx + Math.sin(swing) * upper;
+        const elbowY = sy + Math.cos(swing) * upper;
         const foreA = swing + 0.35;
-        const handX = elbowX + Math.sin(foreA) * fore;
-        const handY = elbowY + Math.cos(foreA) * fore;
-        ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(elbowX, elbowY); ctx.lineTo(handX, handY); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(elbowX, elbowY);
+        ctx.lineTo(elbowX + Math.sin(foreA) * fore, elbowY + Math.cos(foreA) * fore);
+        ctx.stroke();
       }
     }
 
     // ---- cap ----
     ctx.beginPath();
-    ctx.arc(0, headCy, headR, 0, Math.PI * 2);
+    ctx.arc(leanX, headCy, headR, 0, Math.PI * 2);
     if (c.hollowHead) ctx.stroke(); else ctx.fill();
 
-    // ---- stele la lovitură ----
+    // ---- stele ----
     if (this.stars.length && this.recoil > 1) {
       ctx.fillStyle = "#ffd23f";
-      this.stars.forEach(s => star(ctx, Math.cos(s.ang) * s.r, headCy - 8 + Math.sin(s.ang) * s.r * 0.6, 6));
+      this.stars.forEach(s => star(ctx, leanX + Math.cos(s.ang) * s.r, headCy - 8 + Math.sin(s.ang) * s.r * 0.6, 6));
     }
 
     ctx.restore();
 
-    // ---- mesaj deasupra (în spațiul ecranului, mereu drept) ----
+    // ---- mesaj deasupra ----
     if (this.say) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, this.say.ttl / 35);
@@ -232,23 +288,28 @@ function resize() {
 
 function initAgents() { agents = CHARACTERS.map(c => new Agent(c, W)); }
 
-// CLICK stânga = lovitură pe cel mai apropiat stickman
-function hitAt(cx, cy) {
+function nearestAgent(cx, cy) {
   let best = null, bestD = 1e9;
   for (const a of agents) {
     const torsoY = groundY - 70, headY = groundY - 100 - a.c.headR;
     const d = Math.min(Math.hypot(a.x - cx, torsoY - cy), Math.hypot(a.x - cx, headY - cy));
     if (d < bestD) { bestD = d; best = a; }
   }
-  if (best && bestD < 80) best.getHit(cx);
+  return (best && bestD < 90) ? best : null;
 }
-window.addEventListener("click", (e) => hitAt(e.clientX, e.clientY));
-window.addEventListener("touchstart", (e) => { const t = e.touches[0]; if (t) hitAt(t.clientX, t.clientY); }, { passive: true });
+
+window.addEventListener("click", (e) => { const a = nearestAgent(e.clientX, e.clientY); if (a) a.getHit(e.clientX); });
+window.addEventListener("touchstart", (e) => { const t = e.touches[0]; if (t) { const a = nearestAgent(t.clientX, t.clientY); if (a) a.getHit(t.clientX); } }, { passive: true });
+window.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const a = nearestAgent(e.clientX, e.clientY);
+  if (a && window.openChat) window.openChat(a);
+});
 
 function maybeStartFight() {
   if (fightCheck-- > 0) return;
   fightCheck = rand(500, 1100);
-  const free = agents.filter(a => a.state === "walk" || a.state === "idle");
+  const free = agents.filter(a => !a.chatting && (a.state === "walk" || a.state === "idle"));
   if (free.length < 2) return;
   for (let i = 0; i < free.length; i++)
     for (let j = i + 1; j < free.length; j++)
@@ -270,9 +331,32 @@ function drawGround() {
   ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.stroke();
 }
 
+function drawHouse(s) {
+  const w = 120, wallH = 96, base = groundY, x = s.x, p = s.progress; // cât un stickman
+  ctx.save();
+  ctx.strokeStyle = s.color; ctx.lineWidth = 5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.globalAlpha = 0.9;
+  const hh = wallH * Math.min(1, p / 0.7);
+  ctx.strokeRect(x - w / 2, base - hh, w, hh);
+  if (p > 0.7) {
+    const rp = (p - 0.7) / 0.3;
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2 - 8, base - wallH);
+    ctx.lineTo(x, base - wallH - 46 * rp);
+    ctx.lineTo(x + w / 2 + 8, base - wallH);
+    ctx.stroke();
+  }
+  if (p >= 1) {
+    ctx.strokeRect(x - 16, base - 44, 32, 44);   // ușă
+    ctx.strokeRect(x + 24, base - 74, 24, 24);   // fereastră
+  }
+  ctx.restore();
+}
+
 function loop() {
   ctx.clearRect(0, 0, W, H);
   drawGround();
+  structures.forEach(drawHouse);
   maybeStartFight();
   agents.forEach(a => a.update(W));
   [...agents].sort((a, b) => a.x - b.x).forEach(a => a.draw(ctx));
