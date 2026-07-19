@@ -202,6 +202,7 @@ class Agent {
     // stări care ignoră restul
     if (this.state === "held") { this.x = pointer.x; return; }
     if (this.state === "thrown") { this.updateThrown(W); return; }
+    if (this.isPlayer) { this.playerUpdate(W); return; } // controlat de tine
 
     if (this.state !== "sleep" && !this.chatting) this.sleepCd--;
 
@@ -392,6 +393,30 @@ class Agent {
     }
 
     if (this.state !== "leaving") this.x = clamp(this.x, 60, W - 60);
+  }
+
+  playerUpdate(W) {
+    if (this.jumpCd > 0) this.jumpCd--;
+    if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
+    // foc
+    if (this.burnCd > 0) this.burnCd--;
+    if (this.waterAnim > 0) this.waterAnim--;
+    if (this.burning) { if (--this.burnTimer <= 0) { this.burning = false; this.burnCd = 120; } }
+    else if (this.burnCd <= 0) { for (const s of structures) if (s.type === "campfire" && s.progress > 0.5 && !s.out && Math.abs(s.x - this.x) < 26) { this.burning = true; this.burnTimer = 300; break; } }
+    // salt
+    if (this.jumping) {
+      this.jumpT += 1 / 34;
+      this.x += this.face * (this.speed + 1.6);
+      this.walkPhase += 0.16;
+      if (this.jumpT >= 1) { this.jumping = false; this.jumpT = 0; this.jumpCd = 20; this.squash = 1; spawnDust(this.x, groundY, 5); }
+    } else {
+      let dir = 0;
+      if (keys.has("a") || keys.has("arrowleft")) dir -= 1;
+      if (keys.has("d") || keys.has("arrowright")) dir += 1;
+      if (dir) { this.face = dir; const step = dir * this.speed * 2.4; if (!this.wouldCollide(this.x + step)) this.x += step; this.walkPhase += 0.16; this.state = "run"; }
+      else this.state = "idle";
+    }
+    this.x = clamp(this.x, 60, W - 60);
   }
 
   updateThrown(W) {
@@ -612,6 +637,12 @@ class Agent {
       ctx.fillText("⚔️", x, feetY - (128 + 2 * this.c.headR) + Math.sin(frame * 0.15) * 3);
       ctx.restore();
     }
+    // marcaj jucător (controlat de tine)
+    if (this.isPlayer) {
+      ctx.save(); ctx.fillStyle = "#7ee6a0"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("▼", x, feetY - (140 + 2 * this.c.headR) + Math.sin(frame * 0.15) * 2);
+      ctx.restore();
+    }
   }
 }
 
@@ -656,6 +687,8 @@ const VIDEOS = [
 const pointer = { x: -999, y: -999, px: -999, py: -999, down: false, downX: 0, downY: 0, cand: null, grabbed: null, moved: 0 };
 let challenger = null;                        // primul ales prin dublu-click
 let lastClick = { agent: null, time: 0 };     // pt. detectarea dublu-click-ului
+let player = null, playerCount = 0;           // stickman controlat de tine (tasta R)
+const keys = new Set();                        // taste apăsate (A/D/săgeți)
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -738,18 +771,34 @@ function iconAction(name) {
   else if (name === "notepad") openNotepad();
   else if (name === "start") pick([openChrome, triggerBuild, triggerRandomFight])();
 }
-function openNotepad() { notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: "" }; }
+function openNotepad() { notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: 'print("hi")', cursor: 11 }; }
 function closeNotepad() { notepadWin = null; }
-function notepadLines(text, maxW) {
-  ctx.font = "14px 'Consolas', monospace";
-  const out = [];
-  for (const para of text.split("\n")) {
-    if (para === "") { out.push(""); continue; }
-    let line = "";
-    for (const ch of para) { if (ctx.measureText(line + ch).width > maxW && line) { out.push(line); line = ch; } else line += ch; }
-    out.push(line);
+let groundTexts = [];
+function printToGround(msg) { groundTexts.push({ x: rand(140, W - 140), y: groundY - 24, text: msg, life: 260 }); }
+function drawGroundTexts() {
+  ctx.save(); ctx.textAlign = "center"; ctx.font = "bold 24px 'Segoe UI', sans-serif";
+  for (let i = groundTexts.length - 1; i >= 0; i--) {
+    const g = groundTexts[i]; g.y -= 0.25; g.life--;
+    ctx.globalAlpha = Math.min(1, g.life / 60); ctx.fillStyle = "#7ee6a0"; ctx.shadowColor = "#7ee6a0"; ctx.shadowBlur = 8;
+    ctx.fillText(g.text, g.x, g.y);
+    if (g.life <= 0) groundTexts.splice(i, 1);
   }
-  return out;
+  ctx.restore();
+}
+function layoutNotepad(text, maxW, cursor) {
+  ctx.font = "14px 'Consolas', monospace";
+  const lines = []; let line = "", curRow = 0, curX = 0, placed = false;
+  const put = (i) => { if (i === cursor) { curRow = lines.length; curX = ctx.measureText(line).width; placed = true; } };
+  for (let i = 0; i < text.length; i++) {
+    put(i);
+    const ch = text[i];
+    if (ch === "\n") { lines.push(line); line = ""; continue; }
+    if (ctx.measureText(line + ch).width > maxW && line) { lines.push(line); line = ""; }
+    line += ch;
+  }
+  put(text.length); lines.push(line);
+  if (!placed) { curRow = lines.length - 1; curX = ctx.measureText(line).width; }
+  return { lines, curRow, curX };
 }
 function drawNotepad() {
   if (!notepadWin) return;
@@ -767,17 +816,17 @@ function drawNotepad() {
   const px = n.x + 8, py = n.y + 34, pw = n.w - 16, ph = n.h - 42;
   ctx.fillStyle = "#fbfbf7"; ctx.fillRect(px, py, pw, ph);
   ctx.fillStyle = "#1a1a1a"; ctx.font = "14px 'Consolas', monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-  const lines = notepadLines(n.text, pw - 16), lh = 18;
-  const maxLines = Math.floor((ph - 10) / lh), view = lines.slice(-maxLines);
+  const lh = 18, maxLines = Math.floor((ph - 10) / lh);
+  const lay = layoutNotepad(n.text, pw - 16, n.cursor === undefined ? n.text.length : n.cursor);
+  const startLine = Math.max(0, Math.min(lay.curRow - maxLines + 1, lay.lines.length - maxLines));
+  const view = lay.lines.slice(Math.max(0, startLine));
   let ly = py + 6;
-  for (const l of view) { ctx.fillText(l, px + 8, ly); ly += lh; }
-  // cursor
+  for (let i = 0; i < view.length && i < maxLines; i++) { ctx.fillText(view[i], px + 8, ly + i * lh); }
+  // cursor de editare
   if (Math.floor(frame / 30) % 2 === 0) {
-    const last = view.length ? view[view.length - 1] : "";
-    const cw = ctx.measureText(last).width;
-    ctx.fillStyle = "#1a1a1a"; ctx.fillRect(px + 8 + cw + 1, ly - lh, 2, 15);
+    const vr = lay.curRow - Math.max(0, startLine);
+    if (vr >= 0 && vr < maxLines) { ctx.fillStyle = "#1a1a1a"; ctx.fillRect(px + 8 + lay.curX, py + 6 + vr * lh, 2, 15); }
   }
-  if (!n.text) { ctx.fillStyle = "#aaa"; ctx.fillText("scrie ceva...", px + 8, py + 6); }
   ctx.textBaseline = "alphabetic";
   ctx.restore();
 }
@@ -829,7 +878,7 @@ function openChrome(auto) {
   const w = Math.min(500, W - 60), h = Math.min(320, groundY - 50);
   const vid = pick(VIDEOS);
   browserWin = { x: Math.round(W / 2 - w / 2), y: 36, w, h, title: vid.t, vtype: vid.v, views: (Math.random() * 9 + 0.3).toFixed(1) + "M", t0: frame, dur: rand(780, 1320) }; // videoul ține ~13-22s apoi se închide
-  const avail = agents.filter(a => a.state === "walk" || a.state === "idle" || a.state === "scared");
+  const avail = agents.filter(a => !a.isPlayer && (a.state === "walk" || a.state === "idle" || a.state === "scared"));
   avail.forEach((a, i) => { a.state = "watch"; a.lie = 0; a.sleepPhase = null; a.jumping = false; if (a.opponent) a.endFight(); a.watchTarget = browserWin.x + w * 0.12 + i * (w * 0.76) / Math.max(1, avail.length - 1); });
 }
 function closeChrome() {
@@ -837,7 +886,7 @@ function closeChrome() {
   agents.forEach(a => { if (a.state === "watch") { a.state = "walk"; a.targetX = null; a.stateTimer = rand(40, 120); a.speak(pick(["Gata!", "Tare a fost!", "Mai vreau!"]), 70); } });
 }
 function triggerBuild() {
-  const cands = agents.filter(x => (x.state === "walk" || x.state === "idle") && x.builtCount < 2);
+  const cands = agents.filter(x => !x.isPlayer && (x.state === "walk" || x.state === "idle") && x.builtCount < 2);
   if (!cands.length || structures.length >= 8) return;
   const a = pick(cands), type = pick(["house", "tower", "tree", "campfire"]);
   a.state = "build"; a.buildDur = rand(340, 480); a.buildTimer = a.buildDur;
@@ -845,7 +894,7 @@ function triggerBuild() {
   a.speak(pick(["Construiesc!", "Minecraft!"]), 120);
 }
 function triggerRandomFight() {
-  const av = agents.filter(x => x.state === "walk" || x.state === "idle");
+  const av = agents.filter(x => !x.isPlayer && (x.state === "walk" || x.state === "idle"));
   if (av.length < 2) return;
   const a = pick(av), b = pick(av.filter(x => x !== a));
   if (b) startFightBetween(a, b);
@@ -963,7 +1012,7 @@ window.addEventListener("touchstart", (e) => { const t = e.touches[0]; if (t) { 
 window.addEventListener("contextmenu", (e) => { e.preventDefault(); const a = nearestAgent(e.clientX, e.clientY); if (a && window.openChat) window.openChat(a); });
 
 // aventură
-function avail(a) { return !a.away && !a.chatting && a.state !== "sleep" && a.state !== "leaving" && a.state !== "held" && a.state !== "thrown" && a.state !== "scared"; }
+function avail(a) { return !a.away && !a.isPlayer && !a.chatting && a.state !== "sleep" && a.state !== "leaving" && a.state !== "held" && a.state !== "thrown" && a.state !== "scared"; }
 function startAdventure() {
   const orange = agents.find(a => a.c.id === "orange");
   if (!orange || !avail(orange)) return;
@@ -1031,17 +1080,42 @@ window.triggerExpedition = function () {
   return _pending.length > before ? "ok" : "busy";
 };
 
-// tastatură: dacă Notepad e deschis → scrii în el; altfel H = hitbox-uri
+// spawn stickman controlat de tine
+function spawnPlayer() {
+  if (player) { player.isPlayer = false; player.state = "walk"; player.targetX = null; } // vechiul devine AI
+  playerCount++;
+  const c = { id: "player" + playerCount, name: "Tu", color: "#ffffff", hollowHead: false, headR: 20, persona: "jucătorul controlat de tastatură (A/D/săgeți + Space).", chatter: ["Sunt tu!", "Hai!", "Wooo!"], hitLines: ["Au!", "Hei!"], fightLines: ["Ia asta!"] };
+  player = new Agent(c, W);
+  player.isPlayer = true; player.x = W / 2; player.speed = 1.0;
+  agents.push(player);
+}
+
+// tastatură: Notepad deschis → scrii în el; altfel comenzi joc (R/H/Space/A/D/săgeți)
 window.addEventListener("keydown", (e) => {
   if (notepadWin) {
-    if (e.key === "Backspace") { notepadWin.text = notepadWin.text.slice(0, -1); e.preventDefault(); }
-    else if (e.key === "Enter") { notepadWin.text += "\n"; e.preventDefault(); }
+    const n = notepadWin; if (n.cursor === undefined) n.cursor = n.text.length;
+    if (e.key === "Backspace") { if (n.cursor > 0) { n.text = n.text.slice(0, n.cursor - 1) + n.text.slice(n.cursor); n.cursor--; } e.preventDefault(); }
+    else if (e.key === "Enter") {
+      const before = n.text.slice(0, n.cursor), after = n.text.slice(n.cursor);
+      const lineStart = before.lastIndexOf("\n") + 1, nl = after.indexOf("\n");
+      const curLine = n.text.slice(lineStart, nl === -1 ? n.text.length : n.cursor + nl);
+      const m = curLine.match(/print\(\s*["'`](.*?)["'`]\s*\)/); // print("...") → pe pământ
+      if (m) printToGround(m[1]);
+      n.text = before + "\n" + after; n.cursor = before.length + 1; e.preventDefault();
+    }
     else if (e.key === "Escape") { closeNotepad(); }
-    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { notepadWin.text += e.key; e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { n.cursor = Math.max(0, n.cursor - 1); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { n.cursor = Math.min(n.text.length, n.cursor + 1); e.preventDefault(); }
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { n.text = n.text.slice(0, n.cursor) + e.key + n.text.slice(n.cursor); n.cursor++; e.preventDefault(); }
     return;
   }
-  if (e.key === "h" || e.key === "H") showHitboxes = !showHitboxes;
+  const k = e.key.toLowerCase();
+  if (k === "r") { spawnPlayer(); return; }
+  if (k === "h") { showHitboxes = !showHitboxes; return; }
+  if (k === " " || k === "spacebar") { if (player && !player.jumping && player.jumpCd <= 0) { player.jumping = true; player.jumpT = 0; } e.preventDefault(); return; }
+  if (k === "a" || k === "d" || k === "arrowleft" || k === "arrowright") { keys.add(k); if (k.startsWith("arrow")) e.preventDefault(); }
 });
+window.addEventListener("keyup", (e) => { keys.delete(e.key.toLowerCase()); });
 function drawHitboxes() {
   ctx.save();
   ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.85;
@@ -1063,7 +1137,7 @@ function drawHitboxes() {
 function maybeStartFight() {
   if (fightCheck-- > 0) return;
   fightCheck = rand(500, 1100);
-  const free = agents.filter(a => !a.chatting && !a.away && (a.state === "walk" || a.state === "idle"));
+  const free = agents.filter(a => !a.chatting && !a.away && !a.isPlayer && (a.state === "walk" || a.state === "idle"));
   if (free.length < 2) return;
   for (let i = 0; i < free.length; i++)
     for (let j = i + 1; j < free.length; j++)
@@ -1255,6 +1329,7 @@ function loop() {
   drawParticles();
   // desenează: agenții ținuți în mână deasupra tuturor
   [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => a.draw(ctx));
+  drawGroundTexts();
   drawBrowser();
   drawStopwatch();
   drawNotepad();

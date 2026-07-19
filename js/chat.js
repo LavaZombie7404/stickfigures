@@ -107,6 +107,7 @@ elForm.addEventListener("submit", async (e) => {
   const c = current.c;
   addMsg("user", msg);
   histories[c.id].push({ role: "user", content: msg });
+  current.speak(msg, Math.min(500, 150 + msg.length * 4), false); // ce-i scrii apare și deasupra capului
 
   // comandă specială: cheamă gașca înapoi din excursie
   if (/^veniti|^veniți|întoarce|veniți acasă/i.test(msg) && window.recallAdventurers) {
