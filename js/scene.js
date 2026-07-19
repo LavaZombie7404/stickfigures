@@ -97,6 +97,7 @@ class Agent {
     this.tz = 0; this.tzv = 0; this.tvx = 0; this.tangle = 0; this.tangVel = 0; this.bounces = 0;
     this.heldY = 0;
     this.scaredTimer = 0; this.fleeDir = 1; this.fleeTimer = 0;
+    this.watchTarget = 0; // se uită la Chrome
   }
 
   enterScared() {
@@ -254,6 +255,14 @@ class Agent {
       this.x += Math.sign(dx) * (this.speed + 1.3);
       this.walkPhase += 0.18;
       if (this.x < -50 || this.x > W + 50) { this.away = true; this.awayTimer = expedition ? expedition.duration : rand(3600, 18000); }
+    }
+    else if (this.state === "watch") {
+      if (!browserWin) { this.state = "walk"; this.targetX = null; this.stateTimer = rand(30, 90); }
+      else {
+        const dx = this.watchTarget - this.x;
+        if (Math.abs(dx) > 5) { const step = Math.sign(dx) * this.speed * 1.7; this.face = dx >= 0 ? 1 : -1; if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.13; } }
+        else { this.face = (browserWin.x + browserWin.w / 2) >= this.x ? 1 : -1; if (!this.say && Math.random() < 0.004) this.speak(pick(["Ooo!", "Haha!", "Tare!", "👀", "Încă unul!"]), 70); }
+      }
     }
     else if (this.state === "scared") {
       if (--this.scaredTimer <= 0) { this.state = "walk"; this.targetX = null; this.stateTimer = rand(40, 90); this.speak(pick(["Uf...", "Gata?"]), 60); }
@@ -428,7 +437,7 @@ class Agent {
 
   drawSkeleton(ctx) {
     const c = this.c, st = this.state;
-    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared");
+    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch");
     const running = (st === "run" || st === "leaving" || st === "scared");
     const breathe = Math.sin(this.bob) * 1.5;
     const bodyBob = walking ? Math.sin(this.walkPhase * 2) * 2 : breathe;
@@ -609,6 +618,14 @@ let frame = 0;
 let adventureCd = rand(1800, 4200);
 let expedition = null;      // {place, activity}
 let showHitboxes = false;
+let taskIcons = [];         // iconițele din taskbar (pt. click)
+let browserWin = null;      // fereastra Chrome deschisă
+const VIDEOS = [
+  "Cea mai tare cascadorie 😱", "10 lucruri pe care nu le știai", "Pisici amuzante compilație 🐱",
+  "Cum să construiești în Minecraft ⛏️", "Cel mai bun montaj LoL 🎮", "Stick figure fights! 🔥",
+  "Muzică chill pentru relaxat 🎧", "Speedrun record mondial", "Tutorial redstone avansat",
+  "REACȚIE la videoul ăsta 😮", "Top 5 momente epice", "El a construit ASTA în 24h",
+];
 const pointer = { x: -999, y: -999, px: -999, py: -999, down: false, downX: 0, downY: 0, cand: null, grabbed: null, moved: 0 };
 let challenger = null;                        // primul ales prin dublu-click
 let lastClick = { agent: null, time: 0 };     // pt. detectarea dublu-click-ului
@@ -656,6 +673,8 @@ window.addEventListener("mouseup", (e) => {
   if (pointer.grabbed) {
     const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py;
     pointer.grabbed.release(vx * 1.3, vy * 1.3);
+  } else if (pointer.moved < 8 && handleUIClick(pointer.x, pointer.y)) {
+    // consumat de taskbar / fereastra Chrome
   } else if (pointer.cand && pointer.moved < 8) {
     const a = pointer.cand, now = performance.now();
     if (lastClick.agent === a && now - lastClick.time < 350) { fightSelect(a); lastClick.agent = null; } // dublu-click
@@ -663,6 +682,70 @@ window.addEventListener("mouseup", (e) => {
   }
   pointer.down = false; pointer.cand = null; pointer.grabbed = null;
 });
+
+function handleUIClick(x, y) {
+  if (browserWin && browserWin._xb) { const b = browserWin._xb; if (x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s) { closeChrome(); return true; } }
+  if (browserWin) { const b = browserWin; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true; } // click în fereastră → consumă
+  for (const ic of taskIcons) { if (Math.abs(x - ic.cx) <= ic.s / 2 && Math.abs(y - ic.cy) <= ic.s / 2) { iconAction(ic.name); return true; } }
+  return false;
+}
+function iconAction(name) {
+  if (name === "chrome" || name === "search") openChrome();
+  else if (name === "minecraft") triggerBuild();
+  else if (name === "lol") triggerRandomFight();
+}
+function openChrome() {
+  const w = Math.min(500, W - 60), h = Math.min(320, groundY - 50);
+  browserWin = { x: Math.round(W / 2 - w / 2), y: 36, w, h, title: pick(VIDEOS), views: (Math.random() * 9 + 0.3).toFixed(1) + "M", t0: frame };
+  const avail = agents.filter(a => a.state === "walk" || a.state === "idle" || a.state === "scared");
+  avail.forEach((a, i) => { a.state = "watch"; a.lie = 0; a.sleepPhase = null; a.jumping = false; if (a.opponent) a.endFight(); a.watchTarget = browserWin.x + w * 0.12 + i * (w * 0.76) / Math.max(1, avail.length - 1); });
+}
+function closeChrome() {
+  browserWin = null;
+  agents.forEach(a => { if (a.state === "watch") { a.state = "walk"; a.targetX = null; a.stateTimer = rand(40, 120); a.speak(pick(["Gata!", "Tare a fost!", "Mai vreau!"]), 70); } });
+}
+function triggerBuild() {
+  const cands = agents.filter(x => (x.state === "walk" || x.state === "idle") && x.builtCount < 2);
+  if (!cands.length || structures.length >= 8) return;
+  const a = pick(cands), type = pick(["house", "tower", "tree", "campfire"]);
+  a.state = "build"; a.buildDur = rand(340, 480); a.buildTimer = a.buildDur;
+  const s = { x: a.x, color: a.c.color, progress: 0, type }; structures.push(s); a.building = s; a.builtCount++;
+  a.speak(pick(["Construiesc!", "Minecraft!"]), 120);
+}
+function triggerRandomFight() {
+  const av = agents.filter(x => x.state === "walk" || x.state === "idle");
+  if (av.length < 2) return;
+  const a = pick(av), b = pick(av.filter(x => x !== a));
+  if (b) startFightBetween(a, b);
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
+function drawBrowser() {
+  if (!browserWin) return;
+  const b = browserWin;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 26; ctx.shadowOffsetY = 10;
+  ctx.fillStyle = "#202124"; rr(b.x, b.y, b.w, b.h, 12); ctx.fill();
+  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.fillStyle = "#35363a"; rr(b.x, b.y, b.w, 30, 12); ctx.fill(); ctx.fillRect(b.x, b.y + 18, b.w, 12);
+  ctx.fillStyle = "#202124"; rr(b.x + 10, b.y + 7, 150, 22, 7); ctx.fill();
+  ctx.fillStyle = "#e8ecff"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.textAlign = "left"; ctx.fillText("▶ YouTube", b.x + 20, b.y + 22);
+  const xb = { x: b.x + b.w - 26, y: b.y + 7, s: 20 }; b._xb = xb;
+  const hover = pointer.x >= xb.x && pointer.x <= xb.x + xb.s && pointer.y >= xb.y && pointer.y <= xb.y + xb.s;
+  ctx.fillStyle = hover ? "#e81123" : "#4a4b50"; rr(xb.x, xb.y, xb.s, xb.s, 5); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xb.x + 6, xb.y + 6); ctx.lineTo(xb.x + xb.s - 6, xb.y + xb.s - 6); ctx.moveTo(xb.x + xb.s - 6, xb.y + 6); ctx.lineTo(xb.x + 6, xb.y + xb.s - 6); ctx.stroke();
+  ctx.fillStyle = "#2a2b2e"; rr(b.x + 10, b.y + 36, b.w - 20, 22, 11); ctx.fill();
+  ctx.fillStyle = "#9aa0b0"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.fillText("🔒 youtube.com/watch — " + b.title.slice(0, 28), b.x + 22, b.y + 51);
+  const vx = b.x + 12, vy = b.y + 66, vw = b.w - 24, vh = b.h - 66 - 42;
+  ctx.fillStyle = "#000"; ctx.fillRect(vx, vy, vw, vh);
+  const bars = 18, bw = vw / bars * 0.62, t = frame * 0.15;
+  for (let i = 0; i < bars; i++) { const bh2 = (0.2 + 0.8 * Math.abs(Math.sin(t + i * 0.55))) * vh * 0.55; ctx.fillStyle = `hsl(${(i * 20 + frame) % 360},70%,55%)`; ctx.fillRect(vx + i * vw / bars + vw / bars * 0.19, vy + vh / 2 - bh2 / 2, bw, bh2); }
+  ctx.fillStyle = "rgba(255,255,255,0.85)"; const px = vx + vw / 2, py = vy + vh / 2, pr = vh * 0.13; ctx.beginPath(); ctx.moveTo(px - pr * 0.6, py - pr); ctx.lineTo(px - pr * 0.6, py + pr); ctx.lineTo(px + pr, py); ctx.closePath(); ctx.fill();
+  const prog = ((frame - b.t0) % 700) / 700;
+  ctx.fillStyle = "#555"; ctx.fillRect(vx, vy + vh - 4, vw, 4); ctx.fillStyle = "#ff0000"; ctx.fillRect(vx, vy + vh - 4, vw * prog, 4);
+  ctx.fillStyle = "#e8ecff"; ctx.font = "bold 14px 'Segoe UI', sans-serif"; ctx.fillText(b.title, b.x + 12, vy + vh + 22);
+  ctx.fillStyle = "#9aa0b0"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.fillText("▶ " + b.views + " vizualizări · gașca se uită", b.x + 12, vy + vh + 38);
+  ctx.restore();
+}
 
 // dublu-click pe unul, apoi pe altul → se luptă
 function fightSelect(a) {
@@ -791,12 +874,13 @@ function drawTaskbar() {
   ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.stroke();
   const s = Math.min(48, bh - 30);
-  const icons = [drawSearchIcon, drawChromeIcon, drawMinecraftIcon, drawLoLIcon];
+  const icons = [["search", drawSearchIcon], ["chrome", drawChromeIcon], ["minecraft", drawMinecraftIcon], ["lol", drawLoLIcon]];
   const gap = s * 0.55;
   const totalW = icons.length * s + (icons.length - 1) * gap;
   const cy = groundY + bh / 2 + 2;
   let cx = W / 2 - totalW / 2 + s / 2;
-  for (const fn of icons) { fn(cx, cy, s); cx += s + gap; }
+  taskIcons = [];
+  for (const [name, fn] of icons) { fn(cx, cy, s); taskIcons.push({ name, cx, cy, s }); cx += s + gap; }
 }
 function iconBg(cx, cy, s, fill) { ctx.fillStyle = fill; ctx.beginPath(); if (ctx.roundRect) { ctx.roundRect(cx - s / 2, cy - s / 2, s, s, s * 0.22); } else { ctx.rect(cx - s / 2, cy - s / 2, s, s); } ctx.fill(); }
 function drawSearchIcon(cx, cy, s) {
@@ -921,6 +1005,7 @@ function loop() {
   drawParticles();
   // desenează: agenții ținuți în mână deasupra tuturor
   [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => a.draw(ctx));
+  drawBrowser();
   if (showHitboxes) drawHitboxes();
   requestAnimationFrame(loop);
 }
