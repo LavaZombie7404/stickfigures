@@ -616,6 +616,7 @@ let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
 let adventureCd = rand(1800, 4200);
+let chromeAutoCd = rand(2400, 5400); // ei deschid Chrome singuri din când în când
 let expedition = null;      // {place, activity}
 let showHitboxes = false;
 let taskIcons = [];         // iconițele din taskbar (pt. click)
@@ -693,10 +694,12 @@ function iconAction(name) {
   if (name === "chrome" || name === "search") openChrome();
   else if (name === "minecraft") triggerBuild();
   else if (name === "lol") triggerRandomFight();
+  else if (name === "start") pick([openChrome, triggerBuild, triggerRandomFight])();
 }
-function openChrome() {
+function openChrome(auto) {
   const w = Math.min(500, W - 60), h = Math.min(320, groundY - 50);
   browserWin = { x: Math.round(W / 2 - w / 2), y: 36, w, h, title: pick(VIDEOS), views: (Math.random() * 9 + 0.3).toFixed(1) + "M", t0: frame };
+  if (auto) browserWin.autoClose = frame + rand(1400, 2600); // deschis de ei → se închide singur
   const avail = agents.filter(a => a.state === "walk" || a.state === "idle" || a.state === "scared");
   avail.forEach((a, i) => { a.state = "watch"; a.lie = 0; a.sleepPhase = null; a.jumping = false; if (a.opponent) a.endFight(); a.watchTarget = browserWin.x + w * 0.12 + i * (w * 0.76) / Math.max(1, avail.length - 1); });
 }
@@ -881,6 +884,26 @@ function drawTaskbar() {
   let cx = W / 2 - totalW / 2 + s / 2;
   taskIcons = [];
   for (const [name, fn] of icons) { fn(cx, cy, s); taskIcons.push({ name, cx, cy, s }); cx += s + gap; }
+  // Start (stânga)
+  const ss = s * 0.72, sx = 24 + ss / 2;
+  drawStartIcon(sx, cy, ss); taskIcons.push({ name: "start", cx: sx, cy, s: ss });
+  // ceas (dreapta)
+  drawClock(W - 14, cy);
+}
+function drawStartIcon(cx, cy, s) {
+  const q = s * 0.4, g = s * 0.12; ctx.fillStyle = "#4aa3ff";
+  const x0 = cx - q - g / 2, y0 = cy - q - g / 2;
+  ctx.fillRect(x0, y0, q, q); ctx.fillRect(x0 + q + g, y0, q, q);
+  ctx.fillRect(x0, y0 + q + g, q, q); ctx.fillRect(x0 + q + g, y0 + q + g, q, q);
+}
+function drawClock(rx, cy) {
+  const d = new Date();
+  const time = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+  const date = String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0") + "." + d.getFullYear();
+  ctx.save(); ctx.textAlign = "right";
+  ctx.fillStyle = "#e8ecff"; ctx.font = "13px 'Segoe UI', sans-serif"; ctx.fillText(time, rx, cy - 1);
+  ctx.fillStyle = "#9aa0b0"; ctx.font = "11px 'Segoe UI', sans-serif"; ctx.fillText(date, rx, cy + 14);
+  ctx.restore();
 }
 function iconBg(cx, cy, s, fill) { ctx.fillStyle = fill; ctx.beginPath(); if (ctx.roundRect) { ctx.roundRect(cx - s / 2, cy - s / 2, s, s, s * 0.22); } else { ctx.rect(cx - s / 2, cy - s / 2, s, s); } ctx.fill(); }
 function drawSearchIcon(cx, cy, s) {
@@ -999,6 +1022,10 @@ function loop() {
 
   // focuri stinse → dispar după 5s
   for (let i = structures.length - 1; i >= 0; i--) { const s = structures[i]; if (s.out && --s.outTimer <= 0) structures.splice(i, 1); }
+
+  // ei deschid Chrome singuri (rar) + auto-închidere
+  if (browserWin && browserWin.autoClose && frame > browserWin.autoClose) closeChrome();
+  if (!browserWin) { if (--chromeAutoCd <= 0) { chromeAutoCd = rand(4200, 9000); if (agents.filter(a => a.state === "walk" || a.state === "idle").length >= 2) openChrome(true); } }
 
   maybeStartFight();
   agents.forEach(a => a.update(W));
