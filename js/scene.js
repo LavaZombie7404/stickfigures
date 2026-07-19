@@ -1089,6 +1089,11 @@ function spawnPlayer() {
   player.isPlayer = true; player.x = W / 2; player.speed = 1.0;
   agents.push(player);
 }
+// scoate toți jucătorii spawnați (controlat + clone)
+function removePlayers() {
+  for (let i = agents.length - 1; i >= 0; i--) if (String(agents[i].c.id).startsWith("player")) agents.splice(i, 1);
+  player = null;
+}
 
 // tastatură: Notepad deschis → scrii în el; altfel comenzi joc (R/H/Space/A/D/săgeți)
 window.addEventListener("keydown", (e) => {
@@ -1111,6 +1116,7 @@ window.addEventListener("keydown", (e) => {
   }
   const k = e.key.toLowerCase();
   if (k === "r") { spawnPlayer(); return; }
+  if (k === "t") { removePlayers(); return; }
   if (k === "h") { showHitboxes = !showHitboxes; return; }
   if (k === " " || k === "spacebar") { if (player && !player.jumping && player.jumpCd <= 0) { player.jumping = true; player.jumpT = 0; } e.preventDefault(); return; }
   if (k === "a" || k === "d" || k === "arrowleft" || k === "arrowright") { keys.add(k); if (k.startsWith("arrow")) e.preventDefault(); }
