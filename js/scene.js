@@ -10,6 +10,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 let groundY = 0;
 let structures = [];
 let particles = []; // praf la aterizare
+let drawings = [];  // desene pe wallpaper
 
 // proporții schelet
 const HIP_Y = -52, THIGH = 26, SHIN = 26, TORSO = 44, NECK = 8, UPPER = 20, FORE = 18;
@@ -109,6 +110,7 @@ class Agent {
     this.heldY = 0;
     this.scaredTimer = 0; this.fleeDir = 1; this.fleeTimer = 0;
     this.watchTarget = 0; // se uită la Chrome
+    this.doodle = null; this.doodleReveal = 0; this.drawTimer = 0; // desenat pe wallpaper
   }
 
   enterScared() {
@@ -297,6 +299,14 @@ class Agent {
         this.speak(pick(["Gata!", "Frumoasă!", "Casa mea! 🏠"]), 100);
       }
     }
+    else if (this.state === "draw") {
+      if (this.doodle) this.doodleReveal += this.doodle.totalPts / this.drawTimer;
+      if (!this.doodle || this.doodleReveal >= this.doodle.totalPts) {
+        if (this.doodle) { drawings.push(this.doodle); if (drawings.length > 14) drawings.shift(); }
+        this.doodle = null; this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140);
+        this.speak(pick(["Gata! 🎨", "Frumos, nu?", "Tadaa!"]), 90);
+      }
+    }
     else if (this.state === "run") {
       if (this.targetX === null) { this.state = "walk"; this.stateTimer = rand(40, 100); }
       else {
@@ -351,6 +361,13 @@ class Agent {
             const s = { x: this.x, color: this.c.color, progress: 0, type }; structures.push(s); this.building = s; this.builtCount++;
             const m = { house: ["Construiesc!", "O casă!"], tower: ["Un turn!", "Sus!"], tree: ["Un copac!", "Verde!"], campfire: ["Un foc!", "Cald!"] };
             this.speak(pick(m[type]), 120);
+          } else if (r < 0.04) {
+            const cx = clamp(this.x + rand(-40, 40), 90, W - 90);
+            const cy = rand(90, Math.max(130, groundY - 190));
+            this.doodle = makeDoodle(cx, cy, rand(30, 48), this.c.color);
+            this.face = cx >= this.x ? 1 : -1;
+            this.state = "draw"; this.doodleReveal = 0; this.drawTimer = Math.max(70, this.doodle.totalPts * 2);
+            this.speak(pick(["Desenez! 🎨", "Artă!", "O capodoperă!", "Uite ce fac!"]), 110);
           } else if (r < 0.22) { this.state = "run"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 260); this.speak(pick(["Aici!", "Repede!", "Hop!"]), 60); }
           else if (r < 0.45) { this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); }
           else { this.state = "walk"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 300); }
@@ -501,7 +518,7 @@ class Agent {
     } else if (striking && this.attackType === "kick") {
       this.legIK(ctx, -4, hipY, -8, 0, -1);
       ctx.beginPath(); ctx.moveTo(4, hipY); ctx.lineTo(26, hipY + 2); ctx.lineTo(52, hipY - 8); ctx.stroke();
-    } else if (st === "sleep" || st === "build" || st === "idle") {
+    } else if (st === "sleep" || st === "build" || st === "idle" || st === "draw") {
       this.legIK(ctx, -4, hipY, -6, 0, -1);
       this.legIK(ctx, 4, hipY, 6, 0, -1);
     } else {
@@ -533,6 +550,9 @@ class Agent {
     } else if (st === "build") {
       const hm = Math.sin(this.bob * 5) * 12;
       seg(14, -8 + hm, 22, -22 + hm); seg(-14, -6 - hm, -22, -18 - hm);
+    } else if (st === "draw") {
+      const w = Math.sin(this.bob * 6) * 5; // mâna se mișcă (desenează)
+      seg(16 + w, -18, 28 + w, -30 + w); seg(-10, 14, -14, 26);
     } else if (striking && this.attackType === "punch") {
       seg(22, -2, 42, -6); seg(-10, 12, -6, -2);
     } else if (st === "fight") {
@@ -866,6 +886,56 @@ function drawGroundTexts() {
     if (g.life <= 0) groundTexts.splice(i, 1);
   }
   ctx.restore();
+}
+// ---- Desene pe wallpaper (doodles) ----
+function circlePts(cx, cy, r, n) { const p = []; for (let i = 0; i <= n; i++) { const a = i / n * Math.PI * 2; p.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }); } return p; }
+function arcPts(cx, cy, r, a0, a1, n) { const p = []; for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; p.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }); } return p; }
+function starPts(cx, cy, r) { const p = []; for (let i = 0; i <= 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5; const rr = i % 2 === 0 ? r : r * 0.45; p.push({ x: cx + Math.cos(a) * rr, y: cy + Math.sin(a) * rr }); } return p; }
+function heartPts(cx, cy, s) { const p = []; for (let i = 0; i <= 26; i++) { const t = i / 26 * Math.PI * 2; const x = 16 * Math.pow(Math.sin(t), 3); const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t); p.push({ x: cx + x * s / 16, y: cy - y * s / 16 }); } return p; }
+function makeDoodle(cx, cy, s, color) {
+  const type = pick(["smiley", "star", "heart", "house", "sun", "flower", "squiggle", "cat"]);
+  const strokes = [];
+  if (type === "smiley") {
+    strokes.push(circlePts(cx, cy, s, 26));
+    strokes.push(circlePts(cx - s * 0.32, cy - s * 0.22, s * 0.09, 7));
+    strokes.push(circlePts(cx + s * 0.32, cy - s * 0.22, s * 0.09, 7));
+    strokes.push(arcPts(cx, cy + s * 0.08, s * 0.5, 0.2 * Math.PI, 0.8 * Math.PI, 12));
+  } else if (type === "star") { strokes.push(starPts(cx, cy, s)); }
+  else if (type === "heart") { strokes.push(heartPts(cx, cy, s)); }
+  else if (type === "house") {
+    strokes.push([{ x: cx - s * 0.6, y: cy + s * 0.55 }, { x: cx - s * 0.6, y: cy - s * 0.15 }, { x: cx + s * 0.6, y: cy - s * 0.15 }, { x: cx + s * 0.6, y: cy + s * 0.55 }, { x: cx - s * 0.6, y: cy + s * 0.55 }]);
+    strokes.push([{ x: cx - s * 0.72, y: cy - s * 0.15 }, { x: cx, y: cy - s * 0.85 }, { x: cx + s * 0.72, y: cy - s * 0.15 }]);
+  } else if (type === "sun") {
+    strokes.push(circlePts(cx, cy, s * 0.5, 16));
+    for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; strokes.push([{ x: cx + Math.cos(a) * s * 0.62, y: cy + Math.sin(a) * s * 0.62 }, { x: cx + Math.cos(a) * s, y: cy + Math.sin(a) * s }]); }
+  } else if (type === "flower") {
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; strokes.push(circlePts(cx + Math.cos(a) * s * 0.5, cy + Math.sin(a) * s * 0.5, s * 0.3, 10)); }
+    strokes.push(circlePts(cx, cy, s * 0.24, 9));
+  } else if (type === "cat") {
+    strokes.push(circlePts(cx, cy, s * 0.6, 18));
+    strokes.push([{ x: cx - s * 0.5, y: cy - s * 0.35 }, { x: cx - s * 0.62, y: cy - s * 0.75 }, { x: cx - s * 0.22, y: cy - s * 0.5 }]);
+    strokes.push([{ x: cx + s * 0.5, y: cy - s * 0.35 }, { x: cx + s * 0.62, y: cy - s * 0.75 }, { x: cx + s * 0.22, y: cy - s * 0.5 }]);
+  } else { // squiggle
+    const pts = []; for (let i = 0; i <= 22; i++) pts.push({ x: cx - s + i * (2 * s / 22), y: cy + Math.sin(i * 0.85) * s * 0.4 }); strokes.push(pts);
+  }
+  return { strokes, color, totalPts: strokes.reduce((a, st) => a + st.length, 0) };
+}
+function drawDoodle(d, reveal) {
+  const count = reveal === undefined ? d.totalPts : reveal;
+  ctx.save(); ctx.strokeStyle = d.color; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.shadowColor = d.color; ctx.shadowBlur = 6;
+  let used = 0;
+  for (const st of d.strokes) {
+    const take = Math.max(0, Math.min(st.length, count - used));
+    if (take >= 2) { ctx.beginPath(); ctx.moveTo(st[0].x, st[0].y); for (let i = 1; i < take; i++) ctx.lineTo(st[i].x, st[i].y); ctx.stroke(); }
+    used += st.length;
+    if (used >= count) break;
+  }
+  ctx.restore();
+}
+function drawWallpaper() {
+  for (const d of drawings) drawDoodle(d);
+  for (const a of agents) if (a.state === "draw" && a.doodle) drawDoodle(a.doodle, Math.floor(a.doodleReveal));
 }
 function layoutNotepad(text, maxW, cursor) {
   ctx.font = "14px 'Consolas', monospace";
@@ -1392,6 +1462,7 @@ function loop() {
   frame++;
   ctx.clearRect(0, 0, W, H);
   drawTaskbar();
+  drawWallpaper();
   structures.forEach(drawStructure);
 
   if (adventureCd-- <= 0) { adventureCd = rand(3600, 9000); startAdventure(); }
