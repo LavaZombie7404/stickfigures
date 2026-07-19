@@ -120,6 +120,24 @@ class Agent {
     this.speak(pick(["Aaah!", "Sperietură!", "Nu mă prinde!"]), 60);
   }
 
+  stayOnWindow(w, px, py) { // lăsat (drag) pe o fereastră → rămâne agățat acolo
+    this.state = "climbwin"; this.climbWin = w; this.climbPhase = "hang";
+    this.x = clamp(px, 40, W - 40); this.tz = clamp(groundY - py, 30, groundY - 20);
+    this.hangTz = this.tz; this.winGY = py; this.hangTimer = 100000;
+    this.face = (w.x + w.w / 2 >= this.x) ? 1 : -1;
+    this.lie = 0; this.sleepPhase = null; this.jumping = false; this.building = null;
+    if (this.opponent) this.endFight();
+    this.speak(pick(["Aici stau! 🧗", "Cocoțat!", "Sus rămân!"]), 80);
+  }
+  stayOnDrawing(d) { // lăsat (drag) pe un desen → rămâne agățat acolo
+    this.state = "climb"; this.climbT = d; this.climbPhase = "hang";
+    this.x = d.cx; this.tz = clamp(groundY - d.cy - 130, 30, groundY - 20);
+    this.hangTz = this.tz; this.hangTimer = 100000;
+    this.face = 1; this.lie = 0; this.sleepPhase = null; this.jumping = false; this.building = null;
+    if (this.opponent) this.endFight();
+    this.speak(pick(["M-am agățat! 🧗", "Aici stau!", "Sus!"]), 80);
+  }
+
   returnFromAdventure(W) {
     this.away = false; this.adventure = false;
     const side = Math.random() < 0.5 ? -1 : 1;
@@ -902,7 +920,10 @@ function nearestAgent(cx, cy) {
   let best = null, bestD = 1e9;
   for (const a of agents) {
     if (a.away) continue;
-    const torsoY = groundY - 70, headY = groundY - 100 - a.c.headR;
+    let feetY = groundY;
+    if (a.state === "climb" || a.state === "climbwin" || a.state === "thrown" || (a.state === "gopaint" && a.tz > 0)) feetY = groundY - a.tz;
+    else if (a.jumping) feetY = groundY - Math.sin(a.jumpT * Math.PI) * 155;
+    const torsoY = feetY - 70, headY = feetY - 100 - a.c.headR;
     const d = Math.min(Math.hypot(a.x - cx, torsoY - cy), Math.hypot(a.x - cx, headY - cy));
     if (d < bestD) { bestD = d; best = a; }
   }
@@ -914,6 +935,9 @@ window.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   pointer.down = true; pointer.downX = e.clientX; pointer.downY = e.clientY; pointer.moved = 0;
   if (minecraftWin) { mcBreakAt(e.clientX, e.clientY); return; } // spargi blocuri cu click
+  // drag pe bara de titlu → muți fereastra
+  const tw = titleBarAt(e.clientX, e.clientY);
+  if (tw) { pointer.dragWin = { win: tw, ox: e.clientX - tw.x, oy: e.clientY - tw.y }; return; }
   // Paint: dacă apeși în fereastra Paint nu apuci stickmanii din spate
   if (paintWin && e.clientX >= paintWin.x && e.clientX <= paintWin.x + paintWin.w && e.clientY >= paintWin.y && e.clientY <= paintWin.y + paintWin.h) {
     const c = paintWin._canvas;
@@ -927,6 +951,7 @@ window.addEventListener("mousedown", (e) => {
 });
 window.addEventListener("mousemove", (e) => {
   pointer.px = pointer.x; pointer.py = pointer.y; pointer.x = e.clientX; pointer.y = e.clientY;
+  if (pointer.dragWin) { const d = pointer.dragWin, w = d.win; w.x = clamp(pointer.x - d.ox, -w.w + 80, W - 80); w.y = clamp(pointer.y - d.oy, 24, groundY - 60); return; }
   if (minecraftWin) { if (pointer.down) mcBreakAt(pointer.x, pointer.y); return; } // drag ca să spargi mai multe
   if (pointer.paint && paintWin && paintWin.cur) {
     const c = paintWin._canvas;
@@ -943,13 +968,20 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("mouseup", (e) => {
   if (e.button !== 0) return;
+  if (pointer.dragWin) { pointer.dragWin = null; pointer.down = false; return; }
   if (pointer.paint) {
     if (paintWin && paintWin.cur) { paintWin.strokes.push(paintWin.cur); paintWin.cur = null; if (paintWin.strokes.length > 500) paintWin.strokes.shift(); }
     pointer.paint = false; pointer.down = false; pointer.cand = null; pointer.grabbed = null; return;
   }
   if (pointer.grabbed) {
-    const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py;
-    pointer.grabbed.release(vx * 1.3, vy * 1.3);
+    const g = pointer.grabbed, drop = dropTarget(pointer.x, pointer.y);
+    if (drop && pointer.y < groundY - 20) { // lăsat pe o aplicație / desen, în aer → rămâne acolo
+      if (drop.type === "win") g.stayOnWindow(drop.win, pointer.x, pointer.y);
+      else g.stayOnDrawing(drop.d);
+    } else {
+      const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py;
+      g.release(vx * 1.3, vy * 1.3);
+    }
   } else if (pointer.moved < 8 && handleUIClick(pointer.x, pointer.y)) {
     // consumat de taskbar / fereastra Chrome
   } else if (pointer.cand && pointer.moved < 8) {
@@ -1016,6 +1048,14 @@ function sendToPaint(a) {
 function closePaint() { paintWin = null; }
 // ferestrele pe care stickmanii se pot urca (nu Minecraft — e fullscreen cu lumea lui)
 function openWindows() { const l = []; if (browserWin) l.push(browserWin); if (stopwatchWin) l.push(stopwatchWin); if (notepadWin) l.push(notepadWin); if (paintWin) l.push(paintWin); return l; }
+// bara de titlu a unei ferestre (pt. drag), exclude butonul de închidere din dreapta
+function titleBarAt(x, y) { for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w - 30 && y >= w.y && y <= w.y + 28) return w; return null; }
+// pe ce se lasă un stickman apucat (fereastră sau desen) — ca să rămână acolo
+function dropTarget(x, y) {
+  for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h) return { type: "win", win: w };
+  for (const d of drawings) if (Math.abs(x - d.cx) < d.s * 1.6 && Math.abs(y - d.cy) < d.s * 1.6) return { type: "draw", d };
+  return null;
+}
 function openNotepad() { const t = 'a = 1\nprint(a)'; notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: t, cursor: t.length }; }
 function closeNotepad() { notepadWin = null; }
 
