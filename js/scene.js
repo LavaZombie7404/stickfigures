@@ -724,8 +724,9 @@ class Agent {
     if (this.say) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, this.say.ttl / 35);
-      ctx.fillStyle = this.c.color; ctx.font = "700 17px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
-      ctx.shadowColor = this.c.color; ctx.shadowBlur = 10;
+      ctx.font = "600 16px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
+      ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.6)"; // contur închis subțire (lizibil, nu se face pată)
+      ctx.fillStyle = this.c.color;
       const topOff = 118 + 2 * this.c.headR;
       let sx = x, sy = feetY - topOff;
       if (this.lie > 0) sy = feetY - 55;
@@ -733,7 +734,7 @@ class Agent {
       else if (this.state === "thrown") { sy = (groundY - this.tz) - topOff; }
       const lines = wrapText(this.say.text, 28), lh = 19;
       const startY = sy - (lines.length - 1) * lh;
-      lines.forEach((ln, i) => ctx.fillText(ln, sx, startY + i * lh));
+      lines.forEach((ln, i) => { const yy = startY + i * lh; ctx.strokeText(ln, sx, yy); ctx.fillText(ln, sx, yy); });
       ctx.restore();
     }
 
@@ -767,7 +768,7 @@ function star(ctx, x, y, r) {
 // ===== RENDER: desen pe canvas 2D offscreen → compus prin WebGL (GPU + shader) =====
 // Fallback automat la 2D pur dacă WebGL nu e disponibil. Emoji/text rămân intacte.
 const canvas = document.getElementById("scene");
-let ctx, gfx = null, gl = null, glState = null, fxLevel = 0.1;
+let ctx, gfx = null, gl = null, glState = null, fxLevel = 0; // 0 = passthrough curat (fără sharpen pe text)
 function glSupported() { try { return !!document.createElement("canvas").getContext("webgl"); } catch (e) { return false; } }
 (function initRenderer() {
   if (glSupported()) {
@@ -776,6 +777,9 @@ function glSupported() { try { return !!document.createElement("canvas").getCont
   if (gl) { gfx = document.createElement("canvas"); ctx = gfx.getContext("2d"); glState = initGL(gl); }
   if (!gl || !glState) { gl = null; glState = null; gfx = null; ctx = canvas.getContext("2d"); } // 2D pur
 })();
+// expuse pentru inspecție/feedback (ex. Playwright)
+window.setFx = (v) => { fxLevel = v; };
+window.getRenderInfo = () => ({ webgl: !!gl, fx: fxLevel });
 let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
@@ -841,7 +845,7 @@ function initGL(g) {
   const buf = g.createBuffer(); g.bindBuffer(g.ARRAY_BUFFER, buf); g.bufferData(g.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), g.STATIC_DRAW);
   const tex = g.createTexture(); g.bindTexture(g.TEXTURE_2D, tex);
   g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
-  g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
+  g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.NEAREST); g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.NEAREST); // 1:1 crisp, fără înmuiere
   g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL, true);
   return { prog, buf, tex, aPos: g.getAttribLocation(prog, "a_pos"), uTex: g.getUniformLocation(prog, "u_tex"), uTexel: g.getUniformLocation(prog, "u_texel"), uFx: g.getUniformLocation(prog, "u_fx") };
 }
@@ -1966,4 +1970,5 @@ function loop() {
 window.addEventListener("resize", resize);
 resize();
 initAgents();
+window.agents = agents; // expus pentru inspecție/feedback (ex. Playwright)
 loop();
