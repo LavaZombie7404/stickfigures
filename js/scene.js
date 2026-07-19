@@ -962,7 +962,15 @@ function execLine(line, vars) {
   line = line.trim();
   if (!line || line.startsWith("#")) return;
   const pm = line.match(/^print\((.*)\)\s*$/);
-  if (pm) { printToGround(pySplitArgs(pm[1]).map(a => pyStr(pyEval(a, vars))).join(" ")); return; }
+  if (pm) {
+    const out = [];
+    for (const arg of pySplitArgs(pm[1])) {
+      if (arg.trim() === "stickman") spawnStickman(); // print(stickman) → creează un stickman
+      else out.push(pyStr(pyEval(arg, vars)));
+    }
+    if (out.length) printToGround(out.join(" "));
+    return;
+  }
   const am = line.match(/^([a-zA-Z_]\w*)\s*=\s*(.+)$/);
   if (am && !/[=<>!]=/.test(line)) { vars[am[1]] = pyEval(am[2], vars); }
 }
@@ -1408,6 +1416,14 @@ function spawnPlayer() {
   player = new Agent(c, W);
   player.isPlayer = true; player.x = W / 2; player.speed = 1.0;
   agents.push(player);
+}
+// creează un stickman nou (comanda print(stickman) din Notepad)
+function spawnStickman() {
+  if (agents.length >= 60) return false; // plafon ca do(500) să nu îngheţe
+  const a = new Agent(pick(CHARACTERS), W || window.innerWidth);
+  a.state = "walk"; a.targetX = null;
+  agents.push(a);
+  return true;
 }
 // scoate toți jucătorii spawnați (controlat + clone)
 function removePlayers() {
