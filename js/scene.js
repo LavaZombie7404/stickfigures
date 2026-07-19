@@ -961,6 +961,8 @@ function pySplitArgs(s) {
 function execLine(line, vars) {
   line = line.trim();
   if (!line || line.startsWith("#")) return;
+  const um = line.match(/^unprint\((.*)\)\s*$/);
+  if (um) { for (const arg of pySplitArgs(um[1])) { if (arg.trim() === "stickman") removeStickman(); } return; }
   const pm = line.match(/^print\((.*)\)\s*$/);
   if (pm) {
     const out = [];
@@ -1424,6 +1426,11 @@ function spawnStickman() {
   a.state = "walk"; a.targetX = null;
   agents.push(a);
   return true;
+}
+// șterge un stickman (comanda unprint(stickman)) — cel mai recent adăugat, nu jucătorul
+function removeStickman() {
+  for (let i = agents.length - 1; i >= 0; i--) { if (!agents[i].isPlayer) { agents.splice(i, 1); return true; } }
+  return false;
 }
 // scoate toți jucătorii spawnați (controlat + clone)
 function removePlayers() {
