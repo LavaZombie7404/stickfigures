@@ -771,8 +771,68 @@ function iconAction(name) {
   else if (name === "notepad") openNotepad();
   else if (name === "start") pick([openChrome, triggerBuild, triggerRandomFight])();
 }
-function openNotepad() { notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: 'print("hi")', cursor: 11 }; }
+function openNotepad() { const t = 'a = 1\nprint(a)'; notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: t, cursor: t.length }; }
 function closeNotepad() { notepadWin = null; }
+
+// ---- mini-interpretor Python (variabile, print, + - * /) ----
+function pyStr(v) { if (v === true) return "True"; if (v === false) return "False"; if (v === null || v === undefined) return "None"; return String(v); }
+function pyEval(expr, vars) {
+  const toks = [];
+  let i = 0;
+  while (i < expr.length) {
+    const ch = expr[i];
+    if (ch === " " || ch === "\t") { i++; continue; }
+    if (ch === '"' || ch === "'") { let j = i + 1, s = ""; while (j < expr.length && expr[j] !== ch) { s += expr[j]; j++; } toks.push({ t: "str", v: s }); i = j + 1; continue; }
+    if (/[0-9.]/.test(ch)) { let j = i, num = ""; while (j < expr.length && /[0-9.]/.test(expr[j])) { num += expr[j]; j++; } toks.push({ t: "num", v: parseFloat(num) }); i = j; continue; }
+    if (/[a-zA-Z_]/.test(ch)) { let j = i, id = ""; while (j < expr.length && /[a-zA-Z0-9_]/.test(expr[j])) { id += expr[j]; j++; } toks.push({ t: "id", v: id }); i = j; continue; }
+    if ("+-*/()".includes(ch)) { toks.push({ t: "op", v: ch }); i++; continue; }
+    i++;
+  }
+  let pos = 0; const peek = () => toks[pos], next = () => toks[pos++];
+  function addSub() {
+    let l = mulDiv();
+    while (peek() && peek().t === "op" && (peek().v === "+" || peek().v === "-")) {
+      const op = next().v, r = mulDiv();
+      if (op === "+") l = (typeof l === "string" || typeof r === "string") ? pyStr(l) + pyStr(r) : l + r;
+      else l = l - r;
+    }
+    return l;
+  }
+  function mulDiv() { let l = atom(); while (peek() && peek().t === "op" && (peek().v === "*" || peek().v === "/")) { const op = next().v, r = atom(); l = op === "*" ? l * r : l / r; } return l; }
+  function atom() {
+    const tk = peek(); if (!tk) return "";
+    if (tk.t === "num") { next(); return tk.v; }
+    if (tk.t === "str") { next(); return tk.v; }
+    if (tk.t === "id") { next(); if (tk.v === "True") return true; if (tk.v === "False") return false; return (tk.v in vars) ? vars[tk.v] : tk.v; }
+    if (tk.t === "op" && tk.v === "(") { next(); const v = addSub(); if (peek() && peek().v === ")") next(); return v; }
+    if (tk.t === "op" && tk.v === "-") { next(); return -atom(); }
+    next(); return "";
+  }
+  return addSub();
+}
+function pySplitArgs(s) {
+  const args = []; let depth = 0, cur = "", inStr = null;
+  for (const ch of s) {
+    if (inStr) { cur += ch; if (ch === inStr) inStr = null; continue; }
+    if (ch === '"' || ch === "'") { inStr = ch; cur += ch; continue; }
+    if (ch === "(") depth++; if (ch === ")") depth--;
+    if (ch === "," && depth === 0) { args.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) args.push(cur);
+  return args;
+}
+function runPython(text) {
+  const vars = {};
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const pm = line.match(/^print\((.*)\)\s*$/);
+    if (pm) { const out = pySplitArgs(pm[1]).map(a => pyStr(pyEval(a, vars))).join(" "); printToGround(out); continue; }
+    const am = line.match(/^([a-zA-Z_]\w*)\s*=\s*(.+)$/);
+    if (am && !/[=<>!]=/.test(line)) { vars[am[1]] = pyEval(am[2], vars); continue; }
+  }
+}
 let groundTexts = [];
 function printToGround(msg) { groundTexts.push({ x: rand(140, W - 140), y: groundY - 24, text: msg, life: 260 }); }
 function drawGroundTexts() {
@@ -1099,11 +1159,7 @@ function removePlayers() {
 window.addEventListener("keydown", (e) => {
   if (notepadWin) {
     const n = notepadWin; if (n.cursor === undefined) n.cursor = n.text.length;
-    if (e.ctrlKey && (e.key === "e" || e.key === "E")) { // Ctrl+E = rulează print-urile
-      const matches = [...n.text.matchAll(/print\(\s*["'`](.*?)["'`]\s*\)/g)];
-      for (const m of matches) printToGround(m[1]);
-      e.preventDefault(); return;
-    }
+    if (e.ctrlKey && (e.key === "e" || e.key === "E")) { runPython(n.text); e.preventDefault(); return; } // Ctrl+E = rulează
     if (e.key === "Backspace") { if (n.cursor > 0) { n.text = n.text.slice(0, n.cursor - 1) + n.text.slice(n.cursor); n.cursor--; } e.preventDefault(); }
     else if (e.key === "Enter") { n.text = n.text.slice(0, n.cursor) + "\n" + n.text.slice(n.cursor); n.cursor++; e.preventDefault(); }
     else if (e.key === "Escape") { closeNotepad(); }
