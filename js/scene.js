@@ -137,7 +137,10 @@ class Agent {
     return false;
   }
 
-  speak(text, ttl = 120) { this.say = { text, ttl }; }
+  speak(text, ttl = 120, ambient = true) {
+    this.say = { text, ttl };
+    if (ambient && typeof window.onStickSpeak === "function") window.onStickSpeak(this.c.id, text);
+  }
 
   getHit(fromX) {
     if (this.hitCooldown > 0 || this.state === "held" || this.state === "thrown") return;

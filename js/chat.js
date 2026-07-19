@@ -44,6 +44,11 @@ function addMsg(who, text) {
   return el;
 }
 
+// ce zice stickmanul singur/cu alții (chatter, lovire, luptă, salut) → apare în chatul lui
+window.onStickSpeak = function (id, text) {
+  if (current && current.c.id === id) addMsg("bot ambient", "💭 " + text);
+};
+
 window.openChat = function (agent) {
   if (current && current !== agent) current.chatting = false;
   current = agent;
@@ -103,7 +108,7 @@ elForm.addEventListener("submit", async (e) => {
   }
 
   const typing = addMsg("bot typing", "…");
-  current.speak("...", 60);
+  current.speak("...", 60, false);
 
   let reply;
   try {
@@ -115,7 +120,7 @@ elForm.addEventListener("submit", async (e) => {
   addMsg("bot", reply);
   histories[c.id].push({ role: "assistant", content: reply });
   if (histories[c.id].length > 20) histories[c.id] = histories[c.id].slice(-20);
-  if (current) current.speak(reply, Math.min(600, 180 + reply.length * 4)); // tot textul, deasupra capului
+  if (current) current.speak(reply, Math.min(600, 180 + reply.length * 4), false); // răspunsul e deja în chat
 });
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -245,7 +250,7 @@ gForm.addEventListener("submit", async (e) => {
     if (histories[c.id].length > 20) histories[c.id] = histories[c.id].slice(-20);
     gAdd("bot", c.name, c.color, r);
     const ag = agents.find(a => a.c.id === c.id);
-    if (ag) ag.speak(r.length > 22 ? r.slice(0, 20) + "…" : r, 120);
+    if (ag) ag.speak(r.length > 22 ? r.slice(0, 20) + "…" : r, 120, false);
   }
 });
 

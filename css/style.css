@@ -163,3 +163,5 @@ html, body {
 .exped-recall1:hover { background: #3a3320; }
 .exped-recall-all { width: 100%; margin-top: 8px; background: #33407a; color: #eaf0ff; border: none; border-radius: 10px; padding: 9px; font-size: 14px; font-weight: 700; cursor: pointer; }
 .exped-recall-all:hover { filter: brightness(1.1); }
+
+.cmsg.ambient { background: #1a1d33; color: #b6bce0; font-style: italic; opacity: 0.9; align-self: flex-start; }
