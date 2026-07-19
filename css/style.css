@@ -146,3 +146,12 @@ html, body {
   #expedBtn { left: 12px; bottom: 60px; }
   .exped-panel { left: 10px; right: 10px; width: auto; }
 }
+
+.exped-screen { display: block; width: calc(100% - 24px); margin: 12px 12px 0; border-radius: 10px; background: #0e1024; border: 1px solid #2c3152; }
+.exped-go {
+  display: block; width: calc(100% - 24px); margin: 4px 12px 14px;
+  background: #2a2418; color: #ffd27a; border: 1px solid #5c4a2b; border-radius: 12px;
+  padding: 11px; font-size: 15px; font-weight: 700; cursor: pointer;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.exped-go:hover { background: #3a3320; }

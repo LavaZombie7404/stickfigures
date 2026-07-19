@@ -256,20 +256,89 @@ document.body.appendChild(ebtn);
 
 const epanel = document.createElement("div");
 epanel.className = "exped-panel hidden";
-epanel.innerHTML = `<div class="chat-head"><span class="cname" style="color:#ffd27a">🗺️ Expediția</span><button class="chat-close">✕</button></div><div class="exped-body"></div>`;
+epanel.innerHTML = `
+  <div class="chat-head"><span class="cname" style="color:#ffd27a">🗺️ Expediția</span><button class="chat-close">✕</button></div>
+  <canvas class="exped-screen" width="308" height="130"></canvas>
+  <div class="exped-body"></div>
+  <button class="exped-go">🚀 Trimite în expediție</button>`;
 document.body.appendChild(epanel);
 const eBody = epanel.querySelector(".exped-body");
-epanel.querySelector(".chat-close").addEventListener("click", () => { epanel.classList.add("hidden"); });
+const escreen = epanel.querySelector(".exped-screen");
+const escrx = escreen.getContext("2d");
+const ego = epanel.querySelector(".exped-go");
+epanel.querySelector(".chat-close").addEventListener("click", () => epanel.classList.add("hidden"));
+
+ego.addEventListener("click", () => {
+  const r = window.triggerExpedition ? window.triggerExpedition() : null;
+  if (r === "already") flashGo("Sunt deja plecați!");
+  else if (r === "ok") flashGo("Au pornit! 🚀");
+  else flashGo("Prea puțini acasă acum.");
+  setTimeout(refreshExped, 100);
+});
+let goFlash = 0;
+function flashGo(txt) { ego.textContent = txt; goFlash = 90; }
+
+function bgFor(place) {
+  if (/peșter|pester/i.test(place)) return "#161a2a";
+  if (/p[aă]dur/i.test(place)) return "#12281a";
+  if (/munte/i.test(place)) return "#20242e";
+  if (/insul/i.test(place)) return "#122a2e";
+  if (/de[sș]ert/i.test(place)) return "#2a2416";
+  if (/castel|nor/i.test(place)) return "#22203a";
+  return "#141830";
+}
+function emojiFor(act) {
+  if (/comor/i.test(act)) return "💰"; if (/dragon/i.test(act)) return "🐉";
+  if (/peșter|pester/i.test(act)) return "🦇"; if (/baz[aă]|construi/i.test(act)) return "🏗️";
+  if (/cub/i.test(act)) return "🧊"; if (/diamant/i.test(act)) return "💎";
+  return "⭐";
+}
+function drawMini(g, x, gy, color, phase, hollow, crown) {
+  g.save(); g.translate(x, gy); g.strokeStyle = color; g.fillStyle = color; g.lineWidth = 2.5; g.lineCap = "round"; g.lineJoin = "round";
+  const hipY = -18, shY = -30, r = 5, hy = shY - 4 - r, sw = Math.sin(phase) * 4;
+  g.beginPath(); g.moveTo(0, hipY); g.lineTo(-4 + sw, 0); g.stroke();
+  g.beginPath(); g.moveTo(0, hipY); g.lineTo(4 - sw, 0); g.stroke();
+  g.beginPath(); g.moveTo(0, hipY); g.lineTo(0, shY); g.stroke();
+  g.beginPath(); g.moveTo(0, shY + 2); g.lineTo(-5 - sw, shY + 9); g.stroke();
+  g.beginPath(); g.moveTo(0, shY + 2); g.lineTo(5 + sw, shY + 9); g.stroke();
+  g.beginPath(); g.arc(0, hy, r, 0, Math.PI * 2); if (hollow) g.stroke(); else g.fill();
+  if (crown) { g.fillStyle = "#ffd23f"; g.beginPath(); g.moveTo(-6, hy - r); g.lineTo(-6, hy - r - 3); g.lineTo(-3, hy - r - 1); g.lineTo(0, hy - r - 4); g.lineTo(3, hy - r - 1); g.lineTo(6, hy - r - 3); g.lineTo(6, hy - r); g.closePath(); g.fill(); }
+  g.restore();
+}
+function renderScreen() {
+  if (epanel.classList.contains("hidden")) return;
+  const info = window.getExpedition ? window.getExpedition() : { active: false };
+  const g = escrx, W = escreen.width, H = escreen.height, gy = H - 16;
+  if (!info.active) {
+    g.fillStyle = "#0e1024"; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#667"; g.font = "13px 'Segoe UI', sans-serif"; g.textAlign = "center";
+    g.fillText("— nimeni în expediție —", W / 2, H / 2);
+  } else {
+    g.fillStyle = bgFor(info.place); g.fillRect(0, 0, W, H);
+    g.strokeStyle = "rgba(255,255,255,0.18)"; g.lineWidth = 2; g.beginPath(); g.moveTo(0, gy); g.lineTo(W, gy); g.stroke();
+    g.font = "30px serif"; g.textAlign = "center"; g.fillText(emojiFor(info.activity), W - 30, 40);
+    g.fillStyle = "rgba(255,255,255,0.5)"; g.font = "11px 'Segoe UI', sans-serif"; g.textAlign = "left"; g.fillText(info.place, 8, 16);
+    const t = performance.now() / 1000, mem = info.members || [];
+    mem.forEach((m, i) => {
+      const span = (W - 70) / Math.max(1, mem.length);
+      const x = 30 + i * span + Math.sin(t * 1.1 + i) * (span * 0.35);
+      drawMini(g, x, gy, m.color, t * 4 + i * 1.7, m.hollowHead, m.crown);
+    });
+  }
+  if (goFlash > 0 && --goFlash === 0) ego.textContent = "🚀 Trimite în expediție";
+  requestAnimationFrame(renderScreen);
+}
 
 let expedTick = null;
 function refreshExped() {
   const info = window.getExpedition ? window.getExpedition() : { active: false };
-  if (!info.active) { eBody.innerHTML = `<p class="exped-empty">Nimeni nu e plecat în expediție acum.</p><p class="exped-hint">Când Orange strigă „Aventură!", câțiva pleacă aici. Scrie <b>veniti</b> în chat ca să-i chemi.</p>`; return; }
+  ego.style.display = info.active ? "none" : "block";
+  if (!info.active) { eBody.innerHTML = `<p class="exped-empty">Nimeni nu e plecat acum.</p><p class="exped-hint">Apasă butonul de jos ca să-i trimiți, sau așteaptă ca Orange să strige „Aventură!". Scrie <b>veniti</b> în chat ca să-i chemi.</p>`; return; }
   const t = info.remaining === null ? "pornesc chiar acum…" : `se întorc în ~${Math.floor(info.remaining / 60)}:${String(info.remaining % 60).padStart(2, "0")}`;
-  eBody.innerHTML = `<p class="exped-line">🧭 <b>${info.names.join(", ")}</b></p><p class="exped-line">📍 au plecat spre <b>${info.place}</b></p><p class="exped-line">⚔️ ca să <b>${info.activity}</b></p><p class="exped-line">⏳ ${t}</p>`;
+  eBody.innerHTML = `<p class="exped-line">🧭 <b>${info.names.join(", ")}</b></p><p class="exped-line">📍 spre <b>${info.place}</b></p><p class="exped-line">⚔️ ca să <b>${info.activity}</b></p><p class="exped-line">⏳ ${t}</p>`;
 }
 ebtn.addEventListener("click", () => {
   epanel.classList.toggle("hidden");
-  if (!epanel.classList.contains("hidden")) { refreshExped(); expedTick = setInterval(refreshExped, 1000); }
+  if (!epanel.classList.contains("hidden")) { refreshExped(); expedTick = setInterval(refreshExped, 1000); requestAnimationFrame(renderScreen); }
   else if (expedTick) { clearInterval(expedTick); expedTick = null; }
 });

@@ -686,7 +686,23 @@ window.getExpedition = function () {
   if (members.length === 0 || !expedition) return { active: false };
   const awayM = members.filter(m => m.away);
   const rem = awayM.length ? Math.max(...awayM.map(m => m.awayTimer)) : null;
-  return { active: true, names: members.map(m => m.c.name), place: expedition.place, activity: expedition.activity, remaining: rem === null ? null : Math.round(rem / 60) };
+  return {
+    active: true,
+    names: members.map(m => m.c.name),
+    members: members.map(m => ({ name: m.c.name, color: m.c.color, hollowHead: !!m.c.hollowHead, crown: !!m.c.crown })),
+    place: expedition.place, activity: expedition.activity,
+    remaining: rem === null ? null : Math.round(rem / 60),
+  };
+};
+
+// trimite gașca în expediție manual (din buton)
+window.triggerExpedition = function () {
+  const already = agents.some(a => a.adventure && (a.away || a.state === "leaving"));
+  if (already) return "already";
+  const before = _pending.length;
+  startAdventure();
+  adventureCd = rand(3600, 9000);
+  return _pending.length > before ? "ok" : "busy";
 };
 
 // hitbox-uri (tasta H)
