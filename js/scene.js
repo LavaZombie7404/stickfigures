@@ -101,6 +101,7 @@ class Agent {
 
   enterScared() {
     this.state = "scared"; this.scaredTimer = 180; this.fleeTimer = 0; // ~3s
+    this.lie = 0; this.sleepPhase = null;
     this.fleeDir = this.x < pointer.x ? -1 : 1;
     this.speak(pick(["Aaah!", "Sperietură!", "Nu mă prinde!"]), 60);
   }
@@ -144,6 +145,7 @@ class Agent {
     this.state = "held";
     this.heldY = Math.min(pointer.y, groundY);
     this.jumping = false; this.burning = false; this.building = null;
+    this.lie = 0; this.sleepPhase = null; this.sleepCd = rand(3600, 18000); // se trezește dacă dormea
     if (this.opponent) this.endFight();
     this.speak(pick(["Hei!", "Uau!", "Aaah!", "Pune-mă jos!"]), 90);
   }
