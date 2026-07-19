@@ -499,6 +499,23 @@ class Agent {
     // ===== CAP ===== (fără față)
     ctx.beginPath(); ctx.arc(headX, headY, headR, 0, Math.PI * 2);
     if (c.hollowHead) ctx.stroke(); else ctx.fill();
+
+    // coroană (regele portocaliu)
+    if (c.crown) {
+      const cw = headR * 1.4, ch = headR * 0.7, ty = headY - headR + 2;
+      ctx.save();
+      ctx.fillStyle = "#ffd23f"; ctx.strokeStyle = "#b7860b"; ctx.lineWidth = 2; ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(headX - cw / 2, ty);
+      ctx.lineTo(headX - cw / 2, ty - ch * 0.5);
+      ctx.lineTo(headX - cw / 4, ty - ch * 0.15);
+      ctx.lineTo(headX, ty - ch);
+      ctx.lineTo(headX + cw / 4, ty - ch * 0.15);
+      ctx.lineTo(headX + cw / 2, ty - ch * 0.5);
+      ctx.lineTo(headX + cw / 2, ty);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
   }
 
   legIK(ctx, hipX, hipY, footX, footY, bend) {

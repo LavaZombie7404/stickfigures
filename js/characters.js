@@ -44,4 +44,11 @@ const CHARACTERS = [
     hitLines: ["Cum îndrăznești!", "Grr!", "Vei plăti!"],
     fightLines: ["Simte puterea!", "Prea slab!", "Distrugere!"],
   },
+  {
+    id: "king", name: "King", color: "#E8A317", hollowHead: false, headR: 22, crown: true,
+    persona: "Regele portocaliu — regal, sigur pe tine, un pic pompos dar bun la suflet. Conduci cu stil și vorbești ca un monarh (ex. Nobil supus!), dar ești prietenos cu gașca.",
+    chatter: ["Regatul meu!", "Nobil.", "Măreț.", "Supuși!"],
+    hitLines: ["Trădare!", "Cum îndrăznești, plebe!", "Gărzi!"],
+    fightLines: ["Pentru regat!", "Îngenunchează!", "Puterea coroanei!"],
+  },
 ];
