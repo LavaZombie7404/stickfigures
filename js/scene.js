@@ -715,8 +715,8 @@ function openStopwatch() {
 function closeStopwatch() { stopwatchWin = null; }
 function swElapsed(s) { return s.accMs + (s.running ? performance.now() - s.startT : 0); }
 function fmtTime(ms) {
-  const total = Math.floor(ms / 1000), m = Math.floor(total / 60), sec = total % 60;
-  return String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
+  const total = Math.floor(ms), m = Math.floor(total / 60000), sec = Math.floor((total % 60000) / 1000), cs = Math.floor((total % 1000) / 10);
+  return String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0") + "." + String(cs).padStart(2, "0");
 }
 function swBtn(id) {
   const s = stopwatchWin; if (!s) return;
@@ -737,7 +737,7 @@ function drawStopwatch() {
   const hov = pointer.x >= xb.x && pointer.x <= xb.x + xb.s && pointer.y >= xb.y && pointer.y <= xb.y + xb.s;
   ctx.fillStyle = hov ? "#e81123" : "#4a4b50"; rr(xb.x, xb.y, xb.s, xb.s, 5); ctx.fill();
   ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xb.x + 5, xb.y + 5); ctx.lineTo(xb.x + xb.s - 5, xb.y + xb.s - 5); ctx.moveTo(xb.x + xb.s - 5, xb.y + 5); ctx.lineTo(xb.x + 5, xb.y + xb.s - 5); ctx.stroke();
-  ctx.fillStyle = s.running ? "#7ee6a0" : "#e8ecff"; ctx.font = "bold 36px 'Consolas', monospace"; ctx.textAlign = "center";
+  ctx.fillStyle = s.running ? "#7ee6a0" : "#e8ecff"; ctx.font = "bold 32px 'Consolas', monospace"; ctx.textAlign = "center";
   ctx.fillText(fmtTime(swElapsed(s)), s.x + s.w / 2, s.y + 92);
   const by = s.y + s.h - 44, bw = (s.w - 40) / 3, bh = 32;
   s._btns = [
