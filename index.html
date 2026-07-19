@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stick Gang — Gașca lui Alan Becker</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🕺</span>
+      <div>
+        <h1>Stick Gang</h1>
+        <p>Vorbește cu gașca de stick-figures — și altoiește-i dacă vrei 👊</p>
+      </div>
+    </div>
+    <div class="controls">
+      <span id="ai-status" class="ai-status off">💬 Mod scriptat</span>
+      <button id="open-settings" class="settings-btn">⚙️ Setări AI</button>
+    </div>
+  </header>
+
+  <main id="grid" class="grid"></main>
+
+  <footer class="footer">
+    <p>Un omagiu pentru <strong>Animator vs. Animation</strong> de Alan Becker. Personaje folosite doar cu scop de fan-project.</p>
+    <p>Fără cheie: personalități scriptate. Cu cheia ta Claude: răspunsuri AI reale, fiecare cu personalitatea lui.</p>
+  </footer>
+
+  <dialog id="settings" class="dialog">
+    <form method="dialog">
+      <h2>🧠 Activează Claude (opțional)</h2>
+      <p>Lipește cheia ta API Anthropic pentru răspunsuri AI reale. Cheia rămâne <strong>doar în browserul tău</strong> (localStorage), nu se trimite nicăieri altundeva decât la Anthropic.</p>
+      <input id="key-input" type="password" placeholder="sk-ant-..." autocomplete="off" />
+      <p class="hint">Fără cheie, personajele răspund cu replici scriptate (merge instant pentru oricine).</p>
+      <div class="dialog-actions">
+        <button id="clear-key" class="ghost">Șterge cheia</button>
+        <button id="save-key" class="primary">Salvează</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/characters.js"></script>
+  <script src="js/figures.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
