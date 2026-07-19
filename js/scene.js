@@ -1081,8 +1081,8 @@ function openWindows() { const l = []; if (browserWin) l.push(browserWin); if (s
 function titleBarAt(x, y) { for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w - 30 && y >= w.y && y <= w.y + 28) return w; return null; }
 // pe ce se lasă un stickman apucat (fereastră sau desen) — ca să rămână acolo
 function dropTarget(x, y) {
-  // zona include ~70px deasupra marginii de sus → poți să-l lași „pe deasupra" ferestrei
-  for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w && y >= w.y - 70 && y <= w.y + w.h) return { type: "win", win: w };
+  // orice y DEASUPRA ferestrei (până la baza ei), în coloana ei → se prinde pe ea
+  for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w && y <= w.y + w.h) return { type: "win", win: w };
   for (const d of drawings) if (Math.abs(x - d.cx) < d.s * 1.6 && Math.abs(y - d.cy) < d.s * 1.6) return { type: "draw", d };
   return null;
 }
