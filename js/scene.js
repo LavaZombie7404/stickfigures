@@ -253,7 +253,7 @@ class Agent {
       this.face = dx >= 0 ? 1 : -1;
       this.x += Math.sign(dx) * (this.speed + 1.3);
       this.walkPhase += 0.28;
-      if (this.x < -50 || this.x > W + 50) { this.away = true; this.awayTimer = 7200; }
+      if (this.x < -50 || this.x > W + 50) { this.away = true; this.awayTimer = expedition ? expedition.duration : rand(3600, 18000); }
     }
     else if (this.state === "scared") {
       if (--this.scaredTimer <= 0) { this.state = "walk"; this.targetX = null; this.stateTimer = rand(40, 90); this.speak(pick(["Uf...", "Gata?"]), 60); }
@@ -297,6 +297,10 @@ class Agent {
       const d = Math.abs(dx) || 1;
       this.face = dx >= 0 ? 1 : -1;
       if (d > 66) { this.x += Math.sign(dx) * (this.speed + 0.5); this.walkPhase += 0.25; }
+      else if (d < 52) { // prea aproape → se depărtează (nu se suprapun)
+        const s = dx !== 0 ? Math.sign(dx) : (agents.indexOf(this) < agents.indexOf(o) ? 1 : -1);
+        this.x -= s * (this.speed + 0.5); this.walkPhase += 0.2;
+      }
       else if (this.attacker && this.punchTimer-- <= 0) {
         this.punchTimer = rand(30, 50);
         this.attackType = Math.random() < 0.5 ? "punch" : "kick";
@@ -561,16 +565,18 @@ class Agent {
       ctx.beginPath(); ctx.ellipse(x, feetY - 3, 28, 7, 0, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1; ctx.restore();
     }
-    // mesaj
+    // mesaj — deasupra capului în orice stare
     if (this.say) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, this.say.ttl / 35);
       ctx.fillStyle = this.c.color; ctx.font = "700 17px 'Segoe UI', sans-serif"; ctx.textAlign = "center";
       ctx.shadowColor = this.c.color; ctx.shadowBlur = 10;
-      let ly = headTopScreen;
-      if (this.lie > 0) ly = feetY - 55;
-      if (this.state === "held") ly = this.heldY - 90;
-      ctx.fillText(this.say.text, this.state === "held" ? pointer.x : x, ly);
+      const topOff = 118 + 2 * this.c.headR;
+      let sx = x, sy = feetY - topOff;
+      if (this.lie > 0) sy = feetY - 55;
+      if (this.state === "held") { sx = pointer.x; sy = Math.min(this.heldY, groundY) - topOff; }
+      else if (this.state === "thrown") { sy = (groundY - this.tz) - topOff; }
+      ctx.fillText(this.say.text, sx, sy);
       ctx.restore();
     }
   }
@@ -663,7 +669,7 @@ function startAdventure() {
   const side = Math.random() < 0.5 ? -1 : 1, exitX = side < 0 ? -120 : W + 120;
   const PLACES = ["Muntele Pixel", "Peștera Redstone", "Pădurea Întunecată", "Insula Cuburilor", "Tărâmul Animatorului", "Deșertul de Nisip", "Castelul din Nori"];
   const ACTS = ["caută comori", "luptă cu un dragon", "explorează o peșteră", "construiesc o bază secretă", "salvează un cub pierdut", "adună diamante"];
-  expedition = { place: pick(PLACES), activity: pick(ACTS) };
+  expedition = { place: pick(PLACES), activity: pick(ACTS), duration: rand(3600, 18000) }; // 1-5 min
   orange.speak("Aventură!", 160); if (orange.opponent) orange.endFight();
   followers.forEach(f => { if (f.opponent) f.endFight(); f.speak("Hai!", 130); });
   [orange, ...followers].forEach((a, i) => setTimeoutLeave(a, exitX, 30 + i * 18));
