@@ -44,8 +44,11 @@ function addMsg(who, text) {
   return el;
 }
 
-// ce zice stickmanul singur/cu alții (chatter, lovire, luptă, salut) → apare în chatul lui
+// ce zice stickmanul singur/cu alții (chatter, lovire, luptă, salut) → în istoric + live
 window.onStickSpeak = function (id, text) {
+  if (!histories[id]) histories[id] = [];
+  histories[id].push({ role: "ambient", content: text });
+  if (histories[id].length > 40) histories[id] = histories[id].slice(-40);
   if (current && current.c.id === id) addMsg("bot ambient", "💭 " + text);
 };
 
@@ -70,7 +73,11 @@ window.openChat = function (agent) {
     const hi = pick(["Salut! Ce faci?", "Hei! Cu ce te ajut?", "Oh, salut! Zi.", "Bună! Ce mai e nou?"]);
     histories[c.id].push({ role: "assistant", content: hi });
   }
-  histories[c.id].forEach(m => addMsg(m.role === "user" ? "user" : "bot", m.content));
+  histories[c.id].forEach(m => {
+    if (m.role === "user") addMsg("user", m.content);
+    else if (m.role === "ambient") addMsg("bot ambient", "💭 " + m.content);
+    else addMsg("bot", m.content);
+  });
   setTimeout(() => elInput.focus(), 50);
 };
 
@@ -119,7 +126,7 @@ elForm.addEventListener("submit", async (e) => {
   typing.remove();
   addMsg("bot", reply);
   histories[c.id].push({ role: "assistant", content: reply });
-  if (histories[c.id].length > 20) histories[c.id] = histories[c.id].slice(-20);
+  if (histories[c.id].length > 40) histories[c.id] = histories[c.id].slice(-40);
   if (current) current.speak(reply, Math.min(600, 180 + reply.length * 4), false); // răspunsul e deja în chat
 });
 
@@ -131,7 +138,7 @@ async function claudeReply(c, history, retry = 1) {
     `Personalitatea ta: ${c.persona} ` +
     `Vorbește în română, natural și prietenos, ca un chatbot inteligent și util (poți răspunde la orice, ca ChatGPT), ` +
     `dar păstrează-ți mereu personalitatea de ${c.name}. Răspunsuri scurte spre medii, conversaționale. Emoji ocazional, nu exagera.`;
-  const messages = history.map(h => ({ role: h.role, content: h.content }));
+  const messages = history.filter(h => h.role === "user" || h.role === "assistant").map(h => ({ role: h.role, content: h.content }));
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -247,7 +254,7 @@ gForm.addEventListener("submit", async (e) => {
     try { r = hasKey() ? await claudeReply(c, histories[c.id]) : scriptedReply(c, msg); }
     catch (err) { r = scriptedReply(c, msg); }
     histories[c.id].push({ role: "assistant", content: r });
-    if (histories[c.id].length > 20) histories[c.id] = histories[c.id].slice(-20);
+    if (histories[c.id].length > 40) histories[c.id] = histories[c.id].slice(-40);
     gAdd("bot", c.name, c.color, r);
     const ag = agents.find(a => a.c.id === c.id);
     if (ag) ag.speak(r.length > 22 ? r.slice(0, 20) + "…" : r, 120, false);
