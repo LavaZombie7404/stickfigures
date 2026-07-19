@@ -827,7 +827,7 @@ function nearestAgent(cx, cy) {
 window.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   pointer.down = true; pointer.downX = e.clientX; pointer.downY = e.clientY; pointer.moved = 0;
-  if (minecraftWin) return; // Minecraft acoperă tot — nu apuca agenții din spate
+  if (minecraftWin) { mcBreakAt(e.clientX, e.clientY); return; } // spargi blocuri cu click
   // Paint: dacă apeși în fereastra Paint nu apuci stickmanii din spate
   if (paintWin && e.clientX >= paintWin.x && e.clientX <= paintWin.x + paintWin.w && e.clientY >= paintWin.y && e.clientY <= paintWin.y + paintWin.h) {
     const c = paintWin._canvas;
@@ -841,6 +841,7 @@ window.addEventListener("mousedown", (e) => {
 });
 window.addEventListener("mousemove", (e) => {
   pointer.px = pointer.x; pointer.py = pointer.y; pointer.x = e.clientX; pointer.y = e.clientY;
+  if (minecraftWin) { if (pointer.down) mcBreakAt(pointer.x, pointer.y); return; } // drag ca să spargi mai multe
   if (pointer.paint && paintWin && paintWin.cur) {
     const c = paintWin._canvas;
     paintWin.cur.pts.push({ x: clamp(pointer.x, c.x, c.x + c.w) - c.x, y: clamp(pointer.y, c.y, c.y + c.h) - c.y });
@@ -1128,6 +1129,16 @@ function mcFindTarget(m, mob) {
 function mcPlace(m, mob) {
   const c = Math.floor(mob.px / m.tile) + mob.face, r = Math.floor((mob.py - 1) / m.tile);
   if (c >= 0 && c < m.cols && r >= 0 && mcType(m, c, r) === 0) { m.grid[r][c] = 6; mob.wood--; }
+}
+// tu spargi un bloc cu left-click / drag
+function mcBreakAt(sx, sy) {
+  const m = minecraftWin; if (!m) return false;
+  if (sy < m.y + 26 || sx < m.x || sx > m.x + m.w || sy > m.y + m.h) return false; // nu sub bara de titlu / în afară
+  const c = Math.floor((sx - m.x) / m.tile), r = Math.floor((sy - m.y) / m.tile);
+  if (c < 0 || c >= m.cols || r < 0 || r >= m.rows) return false;
+  const ty = m.grid[r][c];
+  if (ty) { m.grid[r][c] = 0; if (ty === 4) m.wood++; return true; }
+  return false;
 }
 function mcPickAction(m, mob) {
   const r = Math.random();
