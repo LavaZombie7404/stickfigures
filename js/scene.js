@@ -360,6 +360,27 @@ class Agent {
         if (this.tz <= 0) { this.tz = 0; this.state = "walk"; this.climbT = null; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 6); }
       }
     }
+    else if (this.state === "climbwin") { // se urcă pe o fereastră de aplicație
+      const w = this.climbWin, open = w && openWindows().includes(w);
+      if (!open && this.climbPhase !== "fall") { // fereastra s-a închis → cade
+        if (this.tz > 0) { this.climbPhase = "fall"; this.climbV = 0; }
+        else { this.state = "walk"; this.climbWin = null; this.tz = 0; this.targetX = null; return; }
+      }
+      if (this.climbPhase === "go") {
+        const dx = clamp(this.winTargetX, 60, W - 60) - this.x;
+        if (Math.abs(dx) < 12) { this.climbPhase = "up"; this.tz = 0; this.hangTz = clamp(groundY - this.winGY - 130, 30, groundY - 20); }
+        else if (!this.jumping) { this.x += Math.sign(dx) * this.speed * 1.9; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.17; }
+      } else if (this.climbPhase === "up") {
+        this.tz += (this.hangTz - this.tz) * 0.22;
+        if (this.hangTz - this.tz < 4) { this.tz = this.hangTz; this.climbPhase = "hang"; this.hangTimer = 300; this.face = (w.x + w.w / 2 >= this.x) ? 1 : -1; this.speak(pick(["M-am agățat! 🧗", "Ce priveliște!", "Sus!"]), 80); }
+      } else if (this.climbPhase === "hang") { // se ține cu o mână ~5s (ca la desene)
+        if (--this.hangTimer <= 0) { this.climbPhase = "fall"; this.climbV = 0; }
+        else if (!this.say && Math.random() < 0.008) this.speak(pick(["Nu privi în jos!", "Uite de sus!", "Hehe."]), 70);
+      } else { // cade jos
+        this.climbV += 0.9; this.tz -= this.climbV;
+        if (this.tz <= 0) { this.tz = 0; this.state = "walk"; this.climbWin = null; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 6); }
+      }
+    }
     else if (this.state === "run") {
       if (this.targetX === null) { this.state = "walk"; this.stateTimer = rand(40, 100); }
       else {
@@ -420,7 +441,16 @@ class Agent {
           } else if (drawings.length && r < 0.045) {
             this.climbT = pick(drawings); this.climbPhase = "go"; this.state = "climb"; this.targetX = null;
             this.speak(pick(["Mă urc pe desen! 🧗", "Sus pe el!", "Cățărare!"]), 90);
-          } else if (r < 0.07) {
+          } else if (openWindows().length && r < 0.065) {
+            const w = pick(openWindows()), edge = pick(["top", "left", "right"]);
+            let gx, gy;
+            if (edge === "top") { gx = rand(w.x + 20, w.x + w.w - 20); gy = w.y; }
+            else if (edge === "left") { gx = w.x; gy = rand(w.y + 20, w.y + w.h * 0.7); }
+            else { gx = w.x + w.w; gy = rand(w.y + 20, w.y + w.h * 0.7); }
+            this.climbWin = w; this.climbPhase = "go"; this.state = "climbwin"; this.targetX = null;
+            this.winTargetX = clamp(gx, 60, W - 60); this.winGY = gy;
+            this.speak(pick(["Mă urc pe ecran! 🧗", "La fereastră!", "Sus pe ea!"]), 90);
+          } else if (r < 0.085) {
             const cx = clamp(this.x + rand(-40, 40), 90, W - 90);
             const cy = rand(90, Math.max(130, groundY - 190));
             this.doodle = makeDoodle(cx, cy, rand(30, 48), this.c.color);
@@ -529,7 +559,7 @@ class Agent {
     } else if (this.state === "thrown") {
       ctx.translate(this.x, groundY - this.tz);
       ctx.rotate(this.tangle);
-    } else if (this.state === "climb" || (this.state === "gopaint" && this.tz > 0)) {
+    } else if (this.state === "climb" || this.state === "climbwin" || (this.state === "gopaint" && this.tz > 0)) {
       ctx.translate(Math.round(this.x), Math.round(groundY - this.tz));
       if (this.squash > 0.02) { scaleY *= 1 - this.squash * 0.28; scaleX *= 1 + this.squash * 0.24; }
     } else {
@@ -556,9 +586,11 @@ class Agent {
   drawSkeleton(ctx) {
     const c = this.c, st = this.state;
     const gpClimb = st === "gopaint" && (this.gpPhase === "up" || this.gpPhase === "fall");
-    const hanging = st === "climb" || gpClimb;
+    const winClimbMove = st === "climbwin" && (this.climbPhase === "up" || this.climbPhase === "fall");
+    const winClimbHang = st === "climbwin" && this.climbPhase === "hang";
+    const hanging = st === "climb" || gpClimb || winClimbMove || winClimbHang;
     const painting = (st === "draw") || (st === "gopaint" && this.gpPhase === "draw");
-    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go"));
+    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go") || (st === "climbwin" && this.climbPhase === "go"));
     const running = (st === "run" || st === "leaving" || st === "scared");
     const breathe = Math.sin(this.bob) * 1.5;
     const bodyBob = walking ? Math.sin(this.walkPhase * 2) * 2 : breathe;
@@ -619,7 +651,7 @@ class Agent {
     } else if (st === "build") {
       const hm = Math.sin(this.bob * 5) * 12;
       seg(14, -8 + hm, 22, -22 + hm); seg(-14, -6 - hm, -22, -18 - hm);
-    } else if (st === "climb" && this.climbPhase === "hang") {
+    } else if ((st === "climb" || st === "climbwin") && this.climbPhase === "hang") {
       const sway = Math.sin(this.bob * 2) * 4; // o mână ține sus, una atârnă
       seg(6, -22, 8, -42); seg(-8 + sway, 16, -12 + sway, 30);
     } else if (hanging) {
@@ -982,6 +1014,8 @@ function sendToPaint(a) {
   a.speak(pick(["Vin! 🎨", "La Paint!", "Și eu desenez!"]), 90);
 }
 function closePaint() { paintWin = null; }
+// ferestrele pe care stickmanii se pot urca (nu Minecraft — e fullscreen cu lumea lui)
+function openWindows() { const l = []; if (browserWin) l.push(browserWin); if (stopwatchWin) l.push(stopwatchWin); if (notepadWin) l.push(notepadWin); if (paintWin) l.push(paintWin); return l; }
 function openNotepad() { const t = 'a = 1\nprint(a)'; notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: t, cursor: t.length }; }
 function closeNotepad() { notepadWin = null; }
 
@@ -1954,13 +1988,13 @@ function loop() {
   updateMinecraft();
   drawParticles();
   // desenează: agenții ținuți în mână deasupra tuturor (cei din Paint se desenează peste fereastră)
-  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (a.state !== "gopaint") a.draw(ctx); });
+  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (a.state !== "gopaint" && a.state !== "climbwin") a.draw(ctx); });
   drawGroundTexts();
   drawBrowser();
   drawStopwatch();
   drawNotepad();
   drawPaint();
-  agents.forEach(a => { if (a.state === "gopaint") a.draw(ctx); }); // peste fereastra Paint
+  agents.forEach(a => { if (a.state === "gopaint" || a.state === "climbwin") a.draw(ctx); }); // peste ferestre
   drawMinecraft(); // acoperă tot când e deschis
   if (showHitboxes) drawHitboxes();
   presentGL(); // compune cadrul pe GPU (WebGL) — sau nimic dacă e 2D pur
