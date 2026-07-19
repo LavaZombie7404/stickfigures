@@ -131,7 +131,7 @@ class Agent {
   updateOnWin(W) {
     if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
     const w = this.onWin;
-    if (!w || !openWindows().includes(w)) { // fereastra s-a închis → cade jos
+    if (!w || !standWindows().includes(w)) { // fereastra s-a închis → cade jos
       this.onWin = null; this.state = "thrown"; this.tzv = 0; this.tvx = 0; this.tangle = 0; this.tangVel = 0; this.bounces = 0; return;
     }
     const floorY = w.y; // stă PE fereastră (pe marginea de sus), nu în ea
@@ -399,7 +399,7 @@ class Agent {
       }
     }
     else if (this.state === "climbwin") { // se urcă pe o fereastră de aplicație
-      const w = this.climbWin, open = w && openWindows().includes(w);
+      const w = this.climbWin, open = w && standWindows().includes(w);
       if (!open && this.climbPhase !== "fall") { // fereastra s-a închis → cade
         if (this.tz > 0) { this.climbPhase = "fall"; this.climbV = 0; }
         else { this.state = "walk"; this.climbWin = null; this.tz = 0; this.targetX = null; return; }
@@ -479,8 +479,8 @@ class Agent {
           } else if (drawings.length && r < 0.045) {
             this.climbT = pick(drawings); this.climbPhase = "go"; this.state = "climb"; this.targetX = null;
             this.speak(pick(["Mă urc pe desen! 🧗", "Sus pe el!", "Cățărare!"]), 90);
-          } else if (openWindows().length && r < 0.065) {
-            const w = pick(openWindows()), edge = pick(["top", "left", "right"]);
+          } else if (standWindows().length && r < 0.065) {
+            const w = pick(standWindows()), edge = pick(["top", "left", "right"]);
             let gx, gy;
             if (edge === "top") { gx = rand(w.x + 20, w.x + w.w - 20); gy = w.y; }
             else if (edge === "left") { gx = w.x; gy = rand(w.y + 20, w.y + w.h * 0.7); }
@@ -572,7 +572,7 @@ class Agent {
     if (this.x < 40 || this.x > W - 40) { this.tvx *= -0.5; this.x = clamp(this.x, 40, W - 40); }
     // aterizează pe partea de sus a ferestrei spre care a fost aruncat
     const lw = this.landWin;
-    if (lw && this.tzv > 0 && openWindows().includes(lw) && this.x >= lw.x && this.x <= lw.x + lw.w && this.tz <= groundY - lw.y) {
+    if (lw && this.tzv > 0 && standWindows().includes(lw) && this.x >= lw.x && this.x <= lw.x + lw.w && this.tz <= groundY - lw.y) {
       this.landWin = null; this.tangle = 0; this.tangVel = 0; this.squash = 1;
       this.stayOnWindow(lw, this.x, lw.y); // aterizează și stă pe ea
       return;
@@ -1018,7 +1018,16 @@ window.addEventListener("mousemove", (e) => {
     for (const mob of m.mobs) { mob.px *= ratio; mob.py *= ratio; mob.vy *= ratio; }
     return;
   }
-  if (pointer.dragMc) { const m = minecraftWin; m.x = clamp(pointer.x - pointer.dragMc.ox, -m.w + 120, W - 120); m.y = clamp(pointer.y - pointer.dragMc.oy, 0, groundY - 60); return; }
+  if (pointer.dragMc) {
+    const m = minecraftWin;
+    const nx = clamp(pointer.x - pointer.dragMc.ox, -m.w + 120, W - 120), ny = clamp(pointer.y - pointer.dragMc.oy, 0, groundY - 60);
+    const ddx = nx - m.x, ddy = ny - m.y; m.x = nx; m.y = ny;
+    for (const a of agents) { // stickmanii de pe Minecraft zboară cu el
+      if (a.state === "climbwin" && a.climbWin === m) { a.x += ddx; a.tz -= ddy; a.hangTz -= ddy; }
+      else if (a.state === "onwin" && a.onWin === m) { a.x += ddx; }
+    }
+    return;
+  }
   if (pointer.mcBreaking) { mcBreakAt(pointer.x, pointer.y); return; } // drag în Minecraft ca să spargi mai multe
   if (pointer.paint && paintWin && paintWin.cur) {
     const c = paintWin._canvas;
@@ -1119,6 +1128,8 @@ function sendToPaint(a) {
 function closePaint() { paintWin = null; }
 // ferestrele pe care stickmanii se pot urca (nu Minecraft — e fullscreen cu lumea lui)
 function openWindows() { const l = []; if (browserWin) l.push(browserWin); if (stopwatchWin) l.push(stopwatchWin); if (notepadWin) l.push(notepadWin); if (paintWin) l.push(paintWin); return l; }
+// ferestre pe care se poate STA/urca — include Minecraft (dar Minecraft are drag/resize propriu)
+function standWindows() { const l = openWindows(); if (minecraftWin) l.push(minecraftWin); return l; }
 // bara de titlu a unei ferestre (pt. drag), exclude butonul de închidere din dreapta
 function titleBarAt(x, y) { for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w - 30 && y >= w.y && y <= w.y + 28) return w; return null; }
 // mânerul de redimensionare (colț dreapta-jos)
@@ -1131,7 +1142,7 @@ function drawResizeHandles() {
 // pe ce se lasă un stickman apucat (fereastră sau desen) — ca să rămână acolo
 function dropTarget(x, y) {
   // orice y DEASUPRA ferestrei (până la baza ei), în coloana ei → se prinde pe ea
-  for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w && y <= w.y + w.h) return { type: "win", win: w };
+  for (const w of standWindows()) if (x >= w.x && x <= w.x + w.w && y <= w.y + w.h) return { type: "win", win: w };
   for (const d of drawings) if (Math.abs(x - d.cx) < d.s * 1.6 && Math.abs(y - d.cy) < d.s * 1.6) return { type: "draw", d };
   return null;
 }
@@ -2116,8 +2127,10 @@ function loop() {
   drawPaint();
   drawResizeHandles();
   // stickmanii pe layerul cel mai în față — peste tot (cei ținuți în mână deasupra celorlalți)
-  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => a.draw(ctx));
+  const onMc = (a) => minecraftWin && ((a.state === "onwin" && a.onWin === minecraftWin) || (a.state === "climbwin" && a.climbWin === minecraftWin));
+  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (!onMc(a)) a.draw(ctx); });
   drawMinecraft(); // acoperă tot când e deschis
+  agents.forEach(a => { if (onMc(a)) a.draw(ctx); }); // cei care stau PE Minecraft — peste el
   if (showHitboxes) drawHitboxes();
   presentGL(); // compune cadrul pe GPU (WebGL) — sau nimic dacă e 2D pur
   requestAnimationFrame(loop);
