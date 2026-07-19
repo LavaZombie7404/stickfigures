@@ -24,7 +24,11 @@ class Agent {
     this.attacker = false;
     this.recoil = 0;
     this.stars = [];
+    this.say = null;               // { text, ttl }
+    this.chatterTimer = rand(120, 400);
   }
+
+  speak(text, ttl = 120) { this.say = { text, ttl }; }
 
   getHit(fromX) {
     if (this.hitCooldown > 0) return;
@@ -36,12 +40,14 @@ class Agent {
     this.recoil = 16;
     this.stars = [];
     for (let i = 0; i < 4; i++) this.stars.push({ ang: (Math.PI * 2 * i) / 4, r: 30 });
+    this.speak(pick(this.c.hitLines), 70);
     if (this.opponent) this.endFight();
   }
 
   startFight(other) {
     this.state = "fight"; this.opponent = other; this.stateTimer = rand(260, 460);
     this.attacker = true; this.punchTimer = 30;
+    this.speak(pick(this.c.fightLines), 90);
   }
   endFight() {
     if (this.opponent) { this.opponent.opponent = null; this.opponent.state = "walk"; this.opponent.stateTimer = rand(60, 160); }
@@ -53,6 +59,17 @@ class Agent {
     if (this.hitCooldown > 0) this.hitCooldown--;
     if (this.recoil > 0.5) this.recoil *= 0.85; else this.recoil = 0;
     this.stars.forEach(s => { s.ang += 0.2; s.r *= 0.96; });
+
+    // text deasupra capului
+    if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
+    if (--this.chatterTimer <= 0) {
+      this.chatterTimer = rand(300, 700);
+      if (this.state === "walk" || this.state === "idle") this.speak(pick(this.c.chatter), 120);
+    }
+    // celălalt reacționează la pumn în bătaie
+    if (this.state === "fight" && this.opponent && this.opponent.recoil > 10 && !this.opponent.say) {
+      this.opponent.speak(pick(this.opponent.c.hitLines), 45);
+    }
 
     if (this.state === "hit") {
       this.x += this.vx; this.vx *= 0.9;
@@ -135,6 +152,17 @@ class Agent {
       this.stars.forEach(s => {
         star(ctx, x + Math.cos(s.ang) * s.r, headCy - 8 + Math.sin(s.ang) * s.r * 0.6, 6);
       });
+    }
+
+    // mesaj deasupra capului
+    if (this.say) {
+      ctx.globalAlpha = Math.min(1, this.say.ttl / 35);
+      ctx.fillStyle = c.color;
+      ctx.font = "700 17px 'Segoe UI', sans-serif";
+      ctx.textAlign = "center";
+      ctx.shadowColor = c.color; ctx.shadowBlur = 10;
+      ctx.fillText(this.say.text, x, headCy - headR - 12);
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     }
 
     ctx.restore();
