@@ -134,8 +134,8 @@ class Agent {
     if (!w || !openWindows().includes(w)) { // fereastra s-a închis → cade jos
       this.onWin = null; this.state = "thrown"; this.tzv = 0; this.tvx = 0; this.tangle = 0; this.tangVel = 0; this.bounces = 0; return;
     }
-    const floorY = (w === paintWin && w._canvas) ? w._canvas.y + w._canvas.h : w.y + w.h - 8;
-    this.tz = groundY - floorY; // picioarele pe podeaua ferestrei
+    const floorY = w.y; // stă PE fereastră (pe marginea de sus), nu în ea
+    this.tz = groundY - floorY; // picioarele pe partea de sus a ferestrei
     const lo = w.x + 16, hi = w.x + w.w - 16;
     if (--this.onWinTimer <= 0) {
       if (Math.random() < 0.45) { this.onWinVX = (Math.random() < 0.5 ? -1 : 1) * this.speed; this.onWinTimer = rand(40, 110); }
@@ -2056,14 +2056,13 @@ function loop() {
   agents.forEach(a => a.update(W));
   updateMinecraft();
   drawParticles();
-  // desenează: agenții ținuți în mână deasupra tuturor (cei din Paint se desenează peste fereastră)
-  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (a.state !== "gopaint" && a.state !== "climbwin" && a.state !== "onwin") a.draw(ctx); });
   drawGroundTexts();
   drawBrowser();
   drawStopwatch();
   drawNotepad();
   drawPaint();
-  agents.forEach(a => { if (a.state === "gopaint" || a.state === "climbwin" || a.state === "onwin") a.draw(ctx); }); // peste ferestre
+  // stickmanii pe layerul cel mai în față — peste tot (cei ținuți în mână deasupra celorlalți)
+  [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => a.draw(ctx));
   drawMinecraft(); // acoperă tot când e deschis
   if (showHitboxes) drawHitboxes();
   presentGL(); // compune cadrul pe GPU (WebGL) — sau nimic dacă e 2D pur
