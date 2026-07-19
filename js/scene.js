@@ -638,6 +638,7 @@ let showHitboxes = false;
 let taskIcons = [];         // iconițele din taskbar (pt. click)
 let browserWin = null;      // fereastra Chrome deschisă
 let stopwatchWin = null;    // fereastra cronometru
+let notepadWin = null;      // fereastra notepad
 const VIDEOS = [
   { t: "Cea mai tare cascadorie 😱", v: "stunt" },
   { t: "10 lucruri pe care nu le știai", v: "facts" },
@@ -710,6 +711,12 @@ window.addEventListener("mouseup", (e) => {
 });
 
 function handleUIClick(x, y) {
+  // notepad
+  if (notepadWin) {
+    const n = notepadWin;
+    if (n._xb) { const b = n._xb; if (x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s) { closeNotepad(); return true; } }
+    if (x >= n.x && x <= n.x + n.w && y >= n.y && y <= n.y + n.h) return true;
+  }
   // cronometru
   if (stopwatchWin) {
     const s = stopwatchWin;
@@ -728,7 +735,51 @@ function iconAction(name) {
   else if (name === "minecraft") triggerBuild();
   else if (name === "lol") triggerRandomFight();
   else if (name === "stopwatch") openStopwatch();
+  else if (name === "notepad") openNotepad();
   else if (name === "start") pick([openChrome, triggerBuild, triggerRandomFight])();
+}
+function openNotepad() { notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: "" }; }
+function closeNotepad() { notepadWin = null; }
+function notepadLines(text, maxW) {
+  ctx.font = "14px 'Consolas', monospace";
+  const out = [];
+  for (const para of text.split("\n")) {
+    if (para === "") { out.push(""); continue; }
+    let line = "";
+    for (const ch of para) { if (ctx.measureText(line + ch).width > maxW && line) { out.push(line); line = ch; } else line += ch; }
+    out.push(line);
+  }
+  return out;
+}
+function drawNotepad() {
+  if (!notepadWin) return;
+  const n = notepadWin;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = "#202124"; rr(n.x, n.y, n.w, n.h, 12); ctx.fill();
+  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.fillStyle = "#35363a"; rr(n.x, n.y, n.w, 28, 12); ctx.fill(); ctx.fillRect(n.x, n.y + 16, n.w, 12);
+  ctx.fillStyle = "#e8ecff"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillText("📝 Notepad", n.x + 12, n.y + 19);
+  const xb = { x: n.x + n.w - 24, y: n.y + 6, s: 18 }; n._xb = xb;
+  const hov = pointer.x >= xb.x && pointer.x <= xb.x + xb.s && pointer.y >= xb.y && pointer.y <= xb.y + xb.s;
+  ctx.fillStyle = hov ? "#e81123" : "#4a4b50"; rr(xb.x, xb.y, xb.s, xb.s, 5); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xb.x + 5, xb.y + 5); ctx.lineTo(xb.x + xb.s - 5, xb.y + xb.s - 5); ctx.moveTo(xb.x + xb.s - 5, xb.y + 5); ctx.lineTo(xb.x + 5, xb.y + xb.s - 5); ctx.stroke();
+  const px = n.x + 8, py = n.y + 34, pw = n.w - 16, ph = n.h - 42;
+  ctx.fillStyle = "#fbfbf7"; ctx.fillRect(px, py, pw, ph);
+  ctx.fillStyle = "#1a1a1a"; ctx.font = "14px 'Consolas', monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  const lines = notepadLines(n.text, pw - 16), lh = 18;
+  const maxLines = Math.floor((ph - 10) / lh), view = lines.slice(-maxLines);
+  let ly = py + 6;
+  for (const l of view) { ctx.fillText(l, px + 8, ly); ly += lh; }
+  // cursor
+  if (Math.floor(frame / 30) % 2 === 0) {
+    const last = view.length ? view[view.length - 1] : "";
+    const cw = ctx.measureText(last).width;
+    ctx.fillStyle = "#1a1a1a"; ctx.fillRect(px + 8 + cw + 1, ly - lh, 2, 15);
+  }
+  if (!n.text) { ctx.fillStyle = "#aaa"; ctx.fillText("scrie ceva...", px + 8, py + 6); }
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
 }
 
 // ---- Cronometru ----
@@ -980,8 +1031,17 @@ window.triggerExpedition = function () {
   return _pending.length > before ? "ok" : "busy";
 };
 
-// hitbox-uri (tasta H)
-window.addEventListener("keydown", (e) => { if (e.key === "h" || e.key === "H") showHitboxes = !showHitboxes; });
+// tastatură: dacă Notepad e deschis → scrii în el; altfel H = hitbox-uri
+window.addEventListener("keydown", (e) => {
+  if (notepadWin) {
+    if (e.key === "Backspace") { notepadWin.text = notepadWin.text.slice(0, -1); e.preventDefault(); }
+    else if (e.key === "Enter") { notepadWin.text += "\n"; e.preventDefault(); }
+    else if (e.key === "Escape") { closeNotepad(); }
+    else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { notepadWin.text += e.key; e.preventDefault(); }
+    return;
+  }
+  if (e.key === "h" || e.key === "H") showHitboxes = !showHitboxes;
+});
 function drawHitboxes() {
   ctx.save();
   ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.85;
@@ -1021,7 +1081,7 @@ function drawTaskbar() {
   ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.stroke();
   const s = Math.min(48, bh - 30);
-  const icons = [["search", drawSearchIcon], ["chrome", drawChromeIcon], ["minecraft", drawMinecraftIcon], ["lol", drawLoLIcon], ["stopwatch", drawStopwatchIcon]];
+  const icons = [["search", drawSearchIcon], ["chrome", drawChromeIcon], ["minecraft", drawMinecraftIcon], ["lol", drawLoLIcon], ["stopwatch", drawStopwatchIcon], ["notepad", drawNotepadIcon]];
   const gap = s * 0.55;
   const totalW = icons.length * s + (icons.length - 1) * gap;
   const cy = groundY + bh / 2 + 2;
@@ -1091,6 +1151,16 @@ function drawStopwatchIcon(cx, cy, s) {
   ctx.beginPath(); ctx.moveTo(cx - s * 0.08, ccy - r - s * 0.08); ctx.lineTo(cx + s * 0.08, ccy - r - s * 0.08); ctx.stroke(); // buton sus
   ctx.beginPath(); ctx.moveTo(cx, ccy - r - s * 0.02); ctx.lineTo(cx, ccy - r - s * 0.1); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cx, ccy); ctx.lineTo(cx, ccy - r * 0.6); ctx.moveTo(cx, ccy); ctx.lineTo(cx + r * 0.5, ccy + r * 0.2); ctx.stroke(); // ace
+}
+function drawNotepadIcon(cx, cy, s) {
+  const w = s * 0.62, h = s * 0.78, x0 = cx - w / 2, y0 = cy - h / 2;
+  ctx.fillStyle = "#f5f5ee"; ctx.fillRect(x0, y0, w, h);
+  ctx.strokeStyle = "#8a8a7a"; ctx.lineWidth = 1.5; ctx.strokeRect(x0, y0, w, h);
+  ctx.strokeStyle = "#9fb7d8"; ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) { const ly = y0 + h * (i / 5); ctx.beginPath(); ctx.moveTo(x0 + 3, ly); ctx.lineTo(x0 + w - 3, ly); ctx.stroke(); }
+  // creion
+  ctx.strokeStyle = "#e8a33a"; ctx.lineWidth = Math.max(2, s * 0.06); ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(cx + w * 0.25, cy + h * 0.35); ctx.lineTo(cx + w * 0.55, cy - h * 0.35); ctx.stroke();
 }
 
 function blk(x, y, s, fill) {
@@ -1187,6 +1257,7 @@ function loop() {
   [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => a.draw(ctx));
   drawBrowser();
   drawStopwatch();
+  drawNotepad();
   if (showHitboxes) drawHitboxes();
   requestAnimationFrame(loop);
 }
