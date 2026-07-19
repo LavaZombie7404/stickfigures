@@ -677,6 +677,18 @@ class Agent {
     const x = Math.round(this.x);
     const headTopScreen = feetY - 150;
 
+    // marcaj „TU" deasupra jucătorului controlat (ca să-l recunoști printre clone)
+    if (this.isPlayer) {
+      const my = feetY - 172 + Math.sin(frame * 0.12) * 4;
+      ctx.save();
+      ctx.fillStyle = "#ffe14d"; ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 3; ctx.lineJoin = "round";
+      ctx.font = "bold 14px 'Segoe UI', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.strokeText("TU", x, my); ctx.fillText("TU", x, my);
+      ctx.beginPath(); ctx.moveTo(x - 7, my + 6); ctx.lineTo(x + 7, my + 6); ctx.lineTo(x, my + 15); ctx.closePath();
+      ctx.stroke(); ctx.fill();
+      ctx.restore();
+    }
+
     // stele
     if (this.stars.length && this.recoil > 1) {
       ctx.save(); ctx.fillStyle = "#ffd23f";
@@ -767,6 +779,7 @@ let browserWin = null;      // fereastra Chrome deschisă
 let stopwatchWin = null;    // fereastra cronometru
 let notepadWin = null;      // fereastra notepad
 let paintWin = null;        // fereastra MS Paint
+let minecraftWin = null;    // modul Minecraft 2D
 const PAINT_COLORS = ["#ffffff", "#E63329", "#FF8C1A", "#F5C518", "#46B84B", "#3B7DD8", "#9b4dff", "#111114"];
 const VIDEOS = [
   { t: "Cea mai tare cascadorie 😱", v: "stunt" },
@@ -814,6 +827,7 @@ function nearestAgent(cx, cy) {
 window.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   pointer.down = true; pointer.downX = e.clientX; pointer.downY = e.clientY; pointer.moved = 0;
+  if (minecraftWin) return; // Minecraft acoperă tot — nu apuca agenții din spate
   // Paint: dacă apeși în fereastra Paint nu apuci stickmanii din spate
   if (paintWin && e.clientX >= paintWin.x && e.clientX <= paintWin.x + paintWin.w && e.clientY >= paintWin.y && e.clientY <= paintWin.y + paintWin.h) {
     const c = paintWin._canvas;
@@ -874,6 +888,12 @@ function handleUIClick(x, y) {
     if (s._btns) for (const b of s._btns) { if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { swBtn(b.id); return true; } }
     if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) return true;
   }
+  // Minecraft 2D (acoperă tot — consumă click-urile)
+  if (minecraftWin) {
+    const m = minecraftWin;
+    if (m._xb) { const b = m._xb; if (x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s) { closeMinecraft(); return true; } }
+    if (x >= m.x && x <= m.x + m.w && y >= m.y && y <= m.y + m.h) return true;
+  }
   // Paint
   if (paintWin) {
     const p = paintWin;
@@ -890,7 +910,7 @@ function handleUIClick(x, y) {
 }
 function iconAction(name) {
   if (name === "chrome" || name === "search") openChrome();
-  else if (name === "minecraft") triggerBuild();
+  else if (name === "minecraft") { if (minecraftWin) closeMinecraft(); else openMinecraft(); }
   else if (name === "lol") triggerRandomFight();
   else if (name === "stopwatch") openStopwatch();
   else if (name === "notepad") openNotepad();
@@ -1063,6 +1083,138 @@ function drawWallpaper() {
   for (const d of drawings) drawDoodle(d);
   for (const a of agents) if (a.state === "draw" && a.doodle) drawDoodle(a.doodle, Math.floor(a.doodleReveal));
 }
+// ================= MINECRAFT 2D =================
+// tipuri bloc: 0 aer, 1 iarbă, 2 pământ, 3 piatră, 4 lemn, 5 frunze, 6 scânduri
+function openMinecraft() {
+  if (window.recallAdventurers) window.recallAdventurers(); // toți din expediție vin înapoi
+  const x = 12, y = 24, w = W - 24, h = groundY - 40, t = 30;
+  const cols = Math.floor(w / t), rows = Math.floor(h / t);
+  const m = { x, y, w, h, tile: t, cols, rows, wood: 0, grid: [], groundRow: 0 };
+  mcGenWorld(m);
+  m.mobs = agents.map(a => ({
+    color: a.c.color, hollow: !!a.c.hollowHead, crown: !!a.c.crown, headR: a.c.headR || 20,
+    px: (1 + Math.floor(Math.random() * (cols - 2)) + 0.5) * t, py: m.groundRow * t,
+    vx: 0, vy: 0, face: Math.random() < 0.5 ? -1 : 1, onGround: false,
+    state: "idle", timer: rand(15, 90), walkPhase: Math.random() * 6, wood: 0, mineC: 0, mineR: 0, mineProg: 0,
+  }));
+  minecraftWin = m;
+}
+function closeMinecraft() { minecraftWin = null; }
+function mcGenWorld(m) {
+  const { cols, rows } = m; const g = []; const gr = rows - 5; m.groundRow = gr;
+  for (let r = 0; r < rows; r++) { g[r] = []; for (let c = 0; c < cols; c++) { let ty = 0; if (r === gr) ty = 1; else if (r > gr && r < gr + 3) ty = 2; else if (r >= gr + 3) ty = 3; g[r][c] = ty; } }
+  const nTrees = Math.max(2, Math.floor(cols / 7));
+  for (let i = 0; i < nTrees; i++) {
+    const c = 2 + Math.floor(Math.random() * (cols - 4)); const th = 3 + Math.floor(Math.random() * 2);
+    for (let k = 1; k <= th; k++) g[gr - k][c] = 4;
+    const top = gr - th;
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) { const rr = top + dr, cc = c + dc; if (g[rr] && g[rr][cc] === 0) g[rr][cc] = 5; }
+    if (g[top - 1]) g[top - 1][c] = 5;
+  }
+  m.grid = g;
+}
+function mcType(m, c, r) { if (c < 0 || c >= m.cols) return 3; if (r < 0) return 0; if (r >= m.rows) return 3; return m.grid[r][c]; }
+function mcSolid(m, c, r) { const ty = mcType(m, c, r); return ty !== 0 && ty !== 5; } // frunzele nu sunt solide
+function mcFindTarget(m, mob) {
+  const c0 = Math.floor(mob.px / m.tile), r0 = Math.floor((mob.py - m.tile * 0.5) / m.tile);
+  let wood = null, dig = null;
+  for (let dc = -3; dc <= 3; dc++) for (let dr = -3; dr <= 1; dr++) {
+    const c = c0 + dc, r = r0 + dr, ty = mcType(m, c, r), d = Math.abs(dc) + Math.abs(dr);
+    if (ty === 4 && (!wood || d < wood.d)) wood = { c, r, d };
+    if ((ty === 1 || ty === 2) && Math.abs(dc) <= 1 && dr >= 0 && !dig) dig = { c, r };
+  }
+  return wood || dig;
+}
+function mcPlace(m, mob) {
+  const c = Math.floor(mob.px / m.tile) + mob.face, r = Math.floor((mob.py - 1) / m.tile);
+  if (c >= 0 && c < m.cols && r >= 0 && mcType(m, c, r) === 0) { m.grid[r][c] = 6; mob.wood--; }
+}
+function mcPickAction(m, mob) {
+  const r = Math.random();
+  if (r < 0.42) { mob.state = "walk"; mob.vx = (Math.random() < 0.5 ? -1 : 1) * rand(0.8, 1.7); mob.face = Math.sign(mob.vx); mob.timer = rand(40, 110); }
+  else if (r < 0.8) { const tgt = mcFindTarget(m, mob); if (tgt) { mob.state = "mine"; mob.mineC = tgt.c; mob.mineR = tgt.r; mob.mineProg = 0; mob.vx = 0; mob.face = (tgt.c + 0.5) * m.tile > mob.px ? 1 : -1; mob.timer = rand(70, 150); } else { mob.state = "walk"; mob.vx = (Math.random() < 0.5 ? -1 : 1) * 1.2; mob.timer = 50; } }
+  else { if (mob.wood > 0) mcPlace(m, mob); mob.state = "idle"; mob.timer = rand(25, 60); }
+}
+function updateMinecraft() {
+  const m = minecraftWin; if (!m) return; const t = m.tile;
+  for (const mob of m.mobs) {
+    mob.vy = Math.min(mob.vy + 0.6, 12); mob.py += mob.vy;
+    const fc = clamp(Math.floor(mob.px / t), 0, m.cols - 1), fr = Math.floor(mob.py / t);
+    if (mcSolid(m, fc, fr)) { mob.py = fr * t; mob.vy = 0; mob.onGround = true; } else mob.onGround = false;
+    if (--mob.timer <= 0) mcPickAction(m, mob);
+    if (mob.state === "walk") {
+      mob.px += mob.vx; mob.walkPhase += 0.2;
+      const dir = Math.sign(mob.vx) || 1, wc = Math.floor((mob.px + dir * t * 0.3) / t), br = Math.floor((mob.py - t * 0.5) / t);
+      if (mcSolid(m, wc, br)) { if (mob.onGround && !mcSolid(m, wc, br - 1)) mob.vy = -9; else { mob.px -= mob.vx; mob.vx *= -1; mob.face = Math.sign(mob.vx); } }
+      mob.px = clamp(mob.px, t * 0.5, m.w - t * 0.5);
+    } else if (mob.state === "mine") {
+      const ty = mcType(m, mob.mineC, mob.mineR);
+      if (ty === 0) { mob.state = "idle"; mob.timer = 15; }
+      else { mob.mineProg += 0.02; if (mob.mineProg >= 1) { m.grid[mob.mineR][mob.mineC] = 0; if (ty === 4) { mob.wood++; m.wood++; } mob.state = "idle"; mob.timer = rand(20, 50); } }
+    }
+  }
+}
+function mcBlockColor(ty) { return { 1: "#5aab3a", 2: "#7a5a3a", 3: "#828289", 4: "#6b4a2a", 5: "#3f8f3a", 6: "#b8894e" }[ty] || "#000"; }
+function mcDrawBlock(x, y, s, ty) {
+  ctx.fillStyle = mcBlockColor(ty); ctx.fillRect(x, y, s, s);
+  if (ty === 1) { ctx.fillStyle = "#7a5a3a"; ctx.fillRect(x, y + s * 0.3, s, s * 0.7); ctx.fillStyle = "#5aab3a"; ctx.fillRect(x, y, s, s * 0.34); }
+  ctx.fillStyle = "rgba(0,0,0,0.12)";
+  if (ty === 3) { ctx.fillRect(x + s * 0.2, y + s * 0.3, s * 0.18, s * 0.14); ctx.fillRect(x + s * 0.55, y + s * 0.58, s * 0.2, s * 0.15); }
+  if (ty === 4) { ctx.strokeStyle = "rgba(0,0,0,0.25)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + s * 0.32, y); ctx.lineTo(x + s * 0.32, y + s); ctx.moveTo(x + s * 0.68, y); ctx.lineTo(x + s * 0.68, y + s); ctx.stroke(); }
+  if (ty === 5) { ctx.fillStyle = "rgba(255,255,255,0.08)"; ctx.fillRect(x + s * 0.1, y + s * 0.12, s * 0.22, s * 0.22); ctx.fillStyle = "rgba(0,0,0,0.12)"; ctx.fillRect(x + s * 0.6, y + s * 0.5, s * 0.22, s * 0.22); }
+  if (ty === 6) { ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y + s * 0.5); ctx.lineTo(x + s, y + s * 0.5); ctx.stroke(); }
+  ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
+}
+function mcCracks(m, mob) {
+  const t = m.tile, x = m.x + mob.mineC * t, y = m.y + mob.mineR * t;
+  ctx.save(); ctx.strokeStyle = "rgba(0,0,0," + (0.25 + mob.mineProg * 0.5) + ")"; ctx.lineWidth = 1.5;
+  const n = Math.ceil(mob.mineProg * 4);
+  for (let i = 0; i < n; i++) { ctx.beginPath(); ctx.moveTo(x + (i % 2 ? 4 : t - 4), y + 4); ctx.lineTo(x + t / 2, y + t / 2); ctx.lineTo(x + (i % 2 ? t - 6 : 6), y + t - 4); ctx.stroke(); }
+  ctx.restore();
+}
+function mcDrawMob(m, mob) {
+  const t = m.tile, s = t / 72;
+  ctx.save(); ctx.translate(m.x + mob.px, m.y + mob.py); ctx.scale(mob.face * s, s);
+  ctx.strokeStyle = mob.color; ctx.fillStyle = mob.color; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const hipY = -52, shY = -96, hy = shY - 8 - mob.headR;
+  const stride = mob.state === "walk" ? Math.sin(mob.walkPhase) * 14 : 5;
+  ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(-5 + stride, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(5 - stride, 0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(0, shY); ctx.stroke();
+  if (mob.state === "mine") {
+    const sw = Math.sin(frame * 0.4) * 26;
+    ctx.beginPath(); ctx.moveTo(0, shY + 4); ctx.lineTo(20, shY + 2 + sw * 0.4); ctx.lineTo(30, shY - 6 + sw); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, shY + 4); ctx.lineTo(-12, shY + 16); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.moveTo(0, shY + 4); ctx.lineTo(-11, shY + 18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, shY + 4); ctx.lineTo(11, shY + 18); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(0, hy, mob.headR, 0, Math.PI * 2); if (mob.hollow) ctx.stroke(); else ctx.fill();
+  if (mob.crown) { const cr = mob.headR; ctx.fillStyle = "#ffd23f"; ctx.beginPath(); ctx.moveTo(-cr * 0.7, hy - cr * 0.9); ctx.lineTo(-cr * 0.7, hy - cr * 1.4); ctx.lineTo(-cr * 0.3, hy - cr * 1.1); ctx.lineTo(0, hy - cr * 1.6); ctx.lineTo(cr * 0.3, hy - cr * 1.1); ctx.lineTo(cr * 0.7, hy - cr * 1.4); ctx.lineTo(cr * 0.7, hy - cr * 0.9); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+function drawMinecraft() {
+  if (!minecraftWin) return; const m = minecraftWin, t = m.tile;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.5)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = "#8fd0ff"; ctx.fillRect(m.x, m.y, m.w, m.h);
+  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.save(); ctx.beginPath(); ctx.rect(m.x, m.y, m.w, m.h); ctx.clip();
+  const gsky = ctx.createLinearGradient(0, m.y, 0, m.y + m.h); gsky.addColorStop(0, "#8fd0ff"); gsky.addColorStop(1, "#d3efff"); ctx.fillStyle = gsky; ctx.fillRect(m.x, m.y, m.w, m.h);
+  for (let r = 0; r < m.rows; r++) { const row = m.grid[r]; for (let c = 0; c < m.cols; c++) { const ty = row[c]; if (ty) mcDrawBlock(m.x + c * t, m.y + r * t, t, ty); } }
+  for (const mob of m.mobs) mcDrawMob(m, mob);
+  for (const mob of m.mobs) if (mob.state === "mine") mcCracks(m, mob);
+  ctx.restore();
+  ctx.fillStyle = "rgba(20,20,26,0.92)"; ctx.fillRect(m.x, m.y, m.w, 26);
+  ctx.fillStyle = "#e8ecff"; ctx.font = "13px 'Segoe UI', sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("⛏️ Minecraft 2D", m.x + 12, m.y + 14);
+  ctx.textAlign = "right"; ctx.fillText("🪵 " + m.wood, m.x + m.w - 44, m.y + 14); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  const xb = { x: m.x + m.w - 24, y: m.y + 5, s: 18 }; m._xb = xb;
+  const hov = pointer.x >= xb.x && pointer.x <= xb.x + xb.s && pointer.y >= xb.y && pointer.y <= xb.y + xb.s;
+  ctx.fillStyle = hov ? "#e81123" : "#4a4b50"; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(xb.x, xb.y, xb.s, xb.s, 5); else ctx.rect(xb.x, xb.y, xb.s, xb.s); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xb.x + 5, xb.y + 5); ctx.lineTo(xb.x + xb.s - 5, xb.y + xb.s - 5); ctx.moveTo(xb.x + xb.s - 5, xb.y + 5); ctx.lineTo(xb.x + 5, xb.y + xb.s - 5); ctx.stroke();
+  ctx.restore();
+}
+
 function layoutNotepad(text, maxW, cursor) {
   ctx.font = "14px 'Consolas', monospace";
   const lines = []; let line = "", curRow = 0, curX = 0, placed = false;
@@ -1414,7 +1566,7 @@ window.triggerExpedition = function () {
 function spawnPlayer() {
   if (player) { player.isPlayer = false; player.state = "walk"; player.targetX = null; } // vechiul devine AI
   playerCount++;
-  const c = { id: "player" + playerCount, name: "Tu", color: "#ffffff", hollowHead: false, headR: 20, persona: "jucătorul controlat de tastatură (A/D/săgeți + Space).", chatter: ["Sunt tu!", "Hai!", "Wooo!"], hitLines: ["Au!", "Hei!"], fightLines: ["Ia asta!"] };
+  const c = { id: "player" + playerCount, name: "Tu", color: "#aab0be", hollowHead: false, headR: 20, persona: "jucătorul controlat de tastatură (A/D/săgeți + Space).", chatter: ["Sunt tu!", "Hai!", "Wooo!"], hitLines: ["Au!", "Hei!"], fightLines: ["Ia asta!"] };
   player = new Agent(c, W);
   player.isPlayer = true; player.x = W / 2; player.speed = 1.0;
   agents.push(player);
@@ -1682,6 +1834,7 @@ function loop() {
 
   maybeStartFight();
   agents.forEach(a => a.update(W));
+  updateMinecraft();
   drawParticles();
   // desenează: agenții ținuți în mână deasupra tuturor (cei din Paint se desenează peste fereastră)
   [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (a.state !== "gopaint") a.draw(ctx); });
@@ -1691,6 +1844,7 @@ function loop() {
   drawNotepad();
   drawPaint();
   agents.forEach(a => { if (a.state === "gopaint") a.draw(ctx); }); // peste fereastra Paint
+  drawMinecraft(); // acoperă tot când e deschis
   if (showHitboxes) drawHitboxes();
   requestAnimationFrame(loop);
 }
