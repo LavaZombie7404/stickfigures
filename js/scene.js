@@ -43,6 +43,19 @@ class Agent {
     this.jumping = false;
     this.jumpT = 0;
     this.jumpCd = 0;
+    this.away = false;      // plecat în aventură
+    this.awayTimer = 0;
+    this.exitX = 0;
+    this.adventure = false;
+  }
+
+  returnFromAdventure(W) {
+    this.away = false; this.adventure = false;
+    const side = Math.random() < 0.5 ? -1 : 1;
+    this.x = side < 0 ? 60 : W - 60;
+    this.face = side < 0 ? 1 : -1;
+    this.state = "walk"; this.targetX = rand(220, W - 220);
+    this.speak(this.c.id === "orange" ? "Ce aventură!" : "Ne-am întors!", 140);
   }
 
   speak(text, ttl = 120) { this.say = { text, ttl }; }
@@ -72,6 +85,9 @@ class Agent {
   }
 
   update(W) {
+    // plecat în aventură → invizibil, revine după timer
+    if (this.away) { if (--this.awayTimer <= 0) this.returnFromAdventure(W); return; }
+
     this.bob += 0.06;
     if (this.hitCooldown > 0) this.hitCooldown--;
     if (this.attackAnim > 0) this.attackAnim--;
@@ -99,6 +115,13 @@ class Agent {
     if (this.state === "hit") {
       this.x += this.vx; this.vx *= 0.9;
       if (--this.stateTimer <= 0) { this.state = "walk"; this.stateTimer = rand(60, 160); this.targetX = null; }
+    }
+    else if (this.state === "leaving") {
+      const dx = this.exitX - this.x;
+      this.face = dx >= 0 ? 1 : -1;
+      this.x += Math.sign(dx) * (this.speed + 1.3);
+      this.walkPhase += 0.28;
+      if (this.x < -50 || this.x > W + 50) { this.away = true; this.awayTimer = 7200; } // ~2 min
     }
     else if (this.state === "build") {
       if (this.building) this.building.progress = Math.min(1, 1 - this.buildTimer / this.buildDur);
@@ -172,23 +195,28 @@ class Agent {
       }
     }
 
-    // dacă merge/aleargă și dă de cineva chiar în față → sare peste el
+    // dă de cineva chiar în față → DOAR UNUL sare peste (50/50 care)
     if ((this.state === "walk" || this.state === "run") && !this.jumping && this.jumpCd <= 0) {
       for (const o of agents) {
-        if (o === this) continue;
+        if (o === this || o.away || o.jumping) continue;
         const dxo = o.x - this.x;
         if (Math.sign(dxo) === this.face && Math.abs(dxo) > 10 && Math.abs(dxo) < 46) {
-          this.jumping = true; this.jumpT = 0; this.jumpCd = 70; break;
+          const headOn = (o.face === -this.face); // se întâlnesc față în față
+          if (headOn && o.jumpCd <= 0 && Math.random() < 0.5) { o.jumping = true; o.jumpT = 0; }
+          else { this.jumping = true; this.jumpT = 0; }
+          this.jumpCd = 70; o.jumpCd = 70; // ambii intră în cooldown → nu sar amândoi
+          break;
         }
       }
     }
 
-    this.x = Math.max(60, Math.min(W - 60, this.x));
+    if (this.state !== "leaving") this.x = Math.max(60, Math.min(W - 60, this.x));
   }
 
   draw(ctx) {
+    if (this.away) return; // plecat în aventură
     const c = this.c;
-    const walking = (this.state === "walk" || this.state === "fight" || this.state === "run");
+    const walking = (this.state === "walk" || this.state === "fight" || this.state === "run" || this.state === "leaving");
     const feetY = Math.round(groundY);
     const x = Math.round(this.x - (this.recoil || 0) * this.face);
 
@@ -318,6 +346,7 @@ const ctx = canvas.getContext("2d");
 let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
+let adventureCd = rand(1800, 4200); // prima aventură în ~30-70s
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -330,9 +359,30 @@ function resize() {
 
 function initAgents() { agents = CHARACTERS.map(c => new Agent(c, W)); }
 
+// Orange strigă "Aventură!" → câțiva vin, zic "Hai!" și pleacă toți; revin după ~2 min
+function startAdventure() {
+  const orange = agents.find(a => a.c.id === "orange");
+  if (!orange || orange.away || orange.state === "sleep" || orange.state === "leaving" || orange.chatting) return;
+  const others = agents.filter(a => a !== orange && !a.away && a.state !== "sleep" && a.state !== "leaving" && !a.chatting);
+  if (others.length === 0) return;
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const exitX = side < 0 ? -120 : W + 120;
+  orange.speak("Aventură!", 160);
+  if (orange.opponent) orange.endFight();
+  let followers = others.filter(() => Math.random() < 0.55);
+  if (followers.length === 0) followers = [pick(others)];
+  followers.forEach(f => { if (f.opponent) f.endFight(); f.speak("Hai!", 130); });
+  // pleacă cu mică întârziere ca să apuce să zică "Hai!"
+  const group = [orange, ...followers];
+  group.forEach((a, i) => setTimeoutLeave(a, exitX, 30 + i * 18));
+}
+const _pending = [];
+function setTimeoutLeave(a, exitX, delay) { _pending.push({ a, exitX, t: delay }); }
+
 function nearestAgent(cx, cy) {
   let best = null, bestD = 1e9;
   for (const a of agents) {
+    if (a.away) continue;
     const torsoY = groundY - 70, headY = groundY - 100 - a.c.headR;
     const d = Math.min(Math.hypot(a.x - cx, torsoY - cy), Math.hypot(a.x - cx, headY - cy));
     if (d < bestD) { bestD = d; best = a; }
@@ -351,7 +401,7 @@ window.addEventListener("contextmenu", (e) => {
 function maybeStartFight() {
   if (fightCheck-- > 0) return;
   fightCheck = rand(500, 1100);
-  const free = agents.filter(a => !a.chatting && (a.state === "walk" || a.state === "idle"));
+  const free = agents.filter(a => !a.chatting && !a.away && (a.state === "walk" || a.state === "idle"));
   if (free.length < 2) return;
   for (let i = 0; i < free.length; i++)
     for (let j = i + 1; j < free.length; j++)
@@ -430,6 +480,17 @@ function loop() {
   ctx.clearRect(0, 0, W, H);
   drawGround();
   structures.forEach(drawStructure);
+
+  // aventură: declanșare rară + plecări întârziate ("Hai!")
+  if (adventureCd-- <= 0) { adventureCd = rand(3600, 9000); startAdventure(); }
+  for (let i = _pending.length - 1; i >= 0; i--) {
+    const p = _pending[i];
+    if (--p.t <= 0) {
+      if (!p.a.away) { p.a.state = "leaving"; p.a.exitX = p.exitX; p.a.adventure = true; if (p.a.opponent) p.a.endFight(); }
+      _pending.splice(i, 1);
+    }
+  }
+
   maybeStartFight();
   agents.forEach(a => a.update(W));
   [...agents].sort((a, b) => a.x - b.x).forEach(a => a.draw(ctx));
