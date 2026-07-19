@@ -715,8 +715,8 @@ function openStopwatch() {
 function closeStopwatch() { stopwatchWin = null; }
 function swElapsed(s) { return s.accMs + (s.running ? performance.now() - s.startT : 0); }
 function fmtTime(ms) {
-  const total = Math.floor(ms), m = Math.floor(total / 60000), sec = Math.floor((total % 60000) / 1000), d = Math.floor((total % 1000) / 100);
-  return String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0") + "." + d;
+  const total = Math.floor(ms / 1000), m = Math.floor(total / 60), sec = total % 60;
+  return String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
 }
 function swBtn(id) {
   const s = stopwatchWin; if (!s) return;
