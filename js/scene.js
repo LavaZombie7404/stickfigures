@@ -983,9 +983,13 @@ window.addEventListener("mousedown", (e) => {
 window.addEventListener("mousemove", (e) => {
   pointer.px = pointer.x; pointer.py = pointer.y; pointer.x = e.clientX; pointer.y = e.clientY;
   if (pointer.resizeWin) {
-    const r = pointer.resizeWin, w = r.win;
-    w.w = clamp(r.w0 + (pointer.x - r.ox), 170, W - w.x - 8);
-    w.h = clamp(r.h0 + (pointer.y - r.oy), 130, groundY - w.y - 8);
+    const r = pointer.resizeWin, w = r.win, ar = r.w0 / r.h0;
+    // scalare uniformă (păstrează proporțiile) — doar mărimea se schimbă, nu forma
+    let nw = clamp(r.w0 + (pointer.x - r.ox), 170, W - w.x - 8), nh = nw / ar;
+    const maxH = groundY - w.y - 8;
+    if (nh > maxH) { nh = maxH; nw = nh * ar; }
+    if (nh < 130) { nh = 130; nw = nh * ar; }
+    w.w = nw; w.h = nh;
     return;
   }
   if (pointer.dragWin) {
