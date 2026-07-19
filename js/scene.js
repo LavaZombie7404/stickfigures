@@ -621,6 +621,7 @@ let expedition = null;      // {place, activity}
 let showHitboxes = false;
 let taskIcons = [];         // iconițele din taskbar (pt. click)
 let browserWin = null;      // fereastra Chrome deschisă
+let stopwatchWin = null;    // fereastra cronometru
 const VIDEOS = [
   "Cea mai tare cascadorie 😱", "10 lucruri pe care nu le știai", "Pisici amuzante compilație 🐱",
   "Cum să construiești în Minecraft ⛏️", "Cel mai bun montaj LoL 🎮", "Stick figure fights! 🔥",
@@ -685,8 +686,16 @@ window.addEventListener("mouseup", (e) => {
 });
 
 function handleUIClick(x, y) {
+  // cronometru
+  if (stopwatchWin) {
+    const s = stopwatchWin;
+    if (s._xb) { const b = s._xb; if (x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s) { closeStopwatch(); return true; } }
+    if (s._btns) for (const b of s._btns) { if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { swBtn(b.id); return true; } }
+    if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) return true;
+  }
+  // Chrome
   if (browserWin && browserWin._xb) { const b = browserWin._xb; if (x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s) { closeChrome(); return true; } }
-  if (browserWin) { const b = browserWin; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true; } // click în fereastră → consumă
+  if (browserWin) { const b = browserWin; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true; }
   for (const ic of taskIcons) { if (Math.abs(x - ic.cx) <= ic.s / 2 && Math.abs(y - ic.cy) <= ic.s / 2) { iconAction(ic.name); return true; } }
   return false;
 }
@@ -694,12 +703,56 @@ function iconAction(name) {
   if (name === "chrome" || name === "search") openChrome();
   else if (name === "minecraft") triggerBuild();
   else if (name === "lol") triggerRandomFight();
+  else if (name === "stopwatch") openStopwatch();
   else if (name === "start") pick([openChrome, triggerBuild, triggerRandomFight])();
+}
+
+// ---- Cronometru ----
+function openStopwatch() {
+  const w = 240, h = 172;
+  stopwatchWin = { x: Math.max(12, Math.round(W / 2 - w / 2) - 150), y: 66, w, h, running: false, accMs: 0, startT: 0 };
+}
+function closeStopwatch() { stopwatchWin = null; }
+function swElapsed(s) { return s.accMs + (s.running ? performance.now() - s.startT : 0); }
+function fmtTime(ms) {
+  const total = Math.floor(ms), m = Math.floor(total / 60000), sec = Math.floor((total % 60000) / 1000), d = Math.floor((total % 1000) / 100);
+  return String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0") + "." + d;
+}
+function swBtn(id) {
+  const s = stopwatchWin; if (!s) return;
+  if (id === "start") { if (!s.running) { s.startT = performance.now(); s.running = true; } }
+  else if (id === "stop") { if (s.running) { s.accMs += performance.now() - s.startT; s.running = false; } }
+  else if (id === "reset") { s.accMs = 0; s.running = false; }
+}
+function drawStopwatch() {
+  if (!stopwatchWin) return;
+  const s = stopwatchWin;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = "#202124"; rr(s.x, s.y, s.w, s.h, 12); ctx.fill();
+  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.fillStyle = "#35363a"; rr(s.x, s.y, s.w, 28, 12); ctx.fill(); ctx.fillRect(s.x, s.y + 16, s.w, 12);
+  ctx.fillStyle = "#e8ecff"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.textAlign = "left"; ctx.fillText("⏱ Cronometru", s.x + 12, s.y + 19);
+  const xb = { x: s.x + s.w - 24, y: s.y + 6, s: 18 }; s._xb = xb;
+  const hov = pointer.x >= xb.x && pointer.x <= xb.x + xb.s && pointer.y >= xb.y && pointer.y <= xb.y + xb.s;
+  ctx.fillStyle = hov ? "#e81123" : "#4a4b50"; rr(xb.x, xb.y, xb.s, xb.s, 5); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xb.x + 5, xb.y + 5); ctx.lineTo(xb.x + xb.s - 5, xb.y + xb.s - 5); ctx.moveTo(xb.x + xb.s - 5, xb.y + 5); ctx.lineTo(xb.x + 5, xb.y + xb.s - 5); ctx.stroke();
+  ctx.fillStyle = s.running ? "#7ee6a0" : "#e8ecff"; ctx.font = "bold 36px 'Consolas', monospace"; ctx.textAlign = "center";
+  ctx.fillText(fmtTime(swElapsed(s)), s.x + s.w / 2, s.y + 92);
+  const by = s.y + s.h - 44, bw = (s.w - 40) / 3, bh = 32;
+  s._btns = [
+    { id: "start", label: "▶ Start", col: "#2e7d46", x: s.x + 12, y: by, w: bw, h: bh },
+    { id: "stop", label: "⏹ Stop", col: "#a83232", x: s.x + 16 + bw, y: by, w: bw, h: bh },
+    { id: "reset", label: "↺ Reset", col: "#3a3f52", x: s.x + 20 + bw * 2, y: by, w: bw, h: bh },
+  ];
+  ctx.textBaseline = "middle";
+  for (const b of s._btns) { ctx.fillStyle = b.col; rr(b.x, b.y, b.w, b.h, 8); ctx.fill(); ctx.fillStyle = "#fff"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.textAlign = "center"; ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2); }
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
 }
 function openChrome(auto) {
   const w = Math.min(500, W - 60), h = Math.min(320, groundY - 50);
-  browserWin = { x: Math.round(W / 2 - w / 2), y: 36, w, h, title: pick(VIDEOS), views: (Math.random() * 9 + 0.3).toFixed(1) + "M", t0: frame };
-  if (auto) browserWin.autoClose = frame + rand(1400, 2600); // deschis de ei → se închide singur
+  browserWin = { x: Math.round(W / 2 - w / 2), y: 36, w, h, title: pick(VIDEOS), views: (Math.random() * 9 + 0.3).toFixed(1) + "M", t0: frame, dur: rand(780, 1320) }; // videoul ține ~13-22s apoi se închide
   const avail = agents.filter(a => a.state === "walk" || a.state === "idle" || a.state === "scared");
   avail.forEach((a, i) => { a.state = "watch"; a.lie = 0; a.sleepPhase = null; a.jumping = false; if (a.opponent) a.endFight(); a.watchTarget = browserWin.x + w * 0.12 + i * (w * 0.76) / Math.max(1, avail.length - 1); });
 }
@@ -743,7 +796,7 @@ function drawBrowser() {
   const bars = 18, bw = vw / bars * 0.62, t = frame * 0.15;
   for (let i = 0; i < bars; i++) { const bh2 = (0.2 + 0.8 * Math.abs(Math.sin(t + i * 0.55))) * vh * 0.55; ctx.fillStyle = `hsl(${(i * 20 + frame) % 360},70%,55%)`; ctx.fillRect(vx + i * vw / bars + vw / bars * 0.19, vy + vh / 2 - bh2 / 2, bw, bh2); }
   ctx.fillStyle = "rgba(255,255,255,0.85)"; const px = vx + vw / 2, py = vy + vh / 2, pr = vh * 0.13; ctx.beginPath(); ctx.moveTo(px - pr * 0.6, py - pr); ctx.lineTo(px - pr * 0.6, py + pr); ctx.lineTo(px + pr, py); ctx.closePath(); ctx.fill();
-  const prog = ((frame - b.t0) % 700) / 700;
+  const prog = clamp((frame - b.t0) / b.dur, 0, 1);
   ctx.fillStyle = "#555"; ctx.fillRect(vx, vy + vh - 4, vw, 4); ctx.fillStyle = "#ff0000"; ctx.fillRect(vx, vy + vh - 4, vw * prog, 4);
   ctx.fillStyle = "#e8ecff"; ctx.font = "bold 14px 'Segoe UI', sans-serif"; ctx.fillText(b.title, b.x + 12, vy + vh + 22);
   ctx.fillStyle = "#9aa0b0"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.fillText("▶ " + b.views + " vizualizări · gașca se uită", b.x + 12, vy + vh + 38);
@@ -877,7 +930,7 @@ function drawTaskbar() {
   ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.stroke();
   const s = Math.min(48, bh - 30);
-  const icons = [["search", drawSearchIcon], ["chrome", drawChromeIcon], ["minecraft", drawMinecraftIcon], ["lol", drawLoLIcon]];
+  const icons = [["search", drawSearchIcon], ["chrome", drawChromeIcon], ["minecraft", drawMinecraftIcon], ["lol", drawLoLIcon], ["stopwatch", drawStopwatchIcon]];
   const gap = s * 0.55;
   const totalW = icons.length * s + (icons.length - 1) * gap;
   const cy = groundY + bh / 2 + 2;
@@ -938,6 +991,15 @@ function drawLoLIcon(cx, cy, s) {
   ctx.fillStyle = "#c89b3c"; ctx.font = `bold ${Math.round(s * 0.4)}px Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText("LoL", cx, cy + 1);
   ctx.textBaseline = "alphabetic";
+}
+function drawStopwatchIcon(cx, cy, s) {
+  iconBg(cx, cy, s, "#2b2e3a");
+  const r = s * 0.28, ccy = cy + s * 0.05;
+  ctx.strokeStyle = "#e8ecff"; ctx.lineWidth = Math.max(2, s * 0.05); ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(cx, ccy, r, 0, Math.PI * 2); ctx.stroke();          // corp
+  ctx.beginPath(); ctx.moveTo(cx - s * 0.08, ccy - r - s * 0.08); ctx.lineTo(cx + s * 0.08, ccy - r - s * 0.08); ctx.stroke(); // buton sus
+  ctx.beginPath(); ctx.moveTo(cx, ccy - r - s * 0.02); ctx.lineTo(cx, ccy - r - s * 0.1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, ccy); ctx.lineTo(cx, ccy - r * 0.6); ctx.moveTo(cx, ccy); ctx.lineTo(cx + r * 0.5, ccy + r * 0.2); ctx.stroke(); // ace
 }
 
 function blk(x, y, s, fill) {
@@ -1023,8 +1085,8 @@ function loop() {
   // focuri stinse → dispar după 5s
   for (let i = structures.length - 1; i >= 0; i--) { const s = structures[i]; if (s.out && --s.outTimer <= 0) structures.splice(i, 1); }
 
-  // ei deschid Chrome singuri (rar) + auto-închidere
-  if (browserWin && browserWin.autoClose && frame > browserWin.autoClose) closeChrome();
+  // videoul se termină → Chrome se închide singur; ei deschid Chrome singuri (rar)
+  if (browserWin && frame - browserWin.t0 >= browserWin.dur) closeChrome();
   if (!browserWin) { if (--chromeAutoCd <= 0) { chromeAutoCd = rand(4200, 9000); if (agents.filter(a => a.state === "walk" || a.state === "idle").length >= 2) openChrome(true); } }
 
   maybeStartFight();
@@ -1033,6 +1095,7 @@ function loop() {
   // desenează: agenții ținuți în mână deasupra tuturor
   [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => a.draw(ctx));
   drawBrowser();
+  drawStopwatch();
   if (showHitboxes) drawHitboxes();
   requestAnimationFrame(loop);
 }
