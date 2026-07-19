@@ -784,13 +784,53 @@ function maybeStartFight() {
       }
 }
 
-function drawGround() {
-  const grad = ctx.createLinearGradient(0, groundY, 0, H);
-  grad.addColorStop(0, "rgba(255,255,255,0.10)");
-  grad.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = grad; ctx.fillRect(0, groundY, W, H - groundY);
-  ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 2;
+// pământul = taskbar Windows cu iconițe (Search, Chrome, Minecraft, League of Legends)
+function drawTaskbar() {
+  const bh = H - groundY;
+  ctx.fillStyle = "#191b24"; ctx.fillRect(0, groundY, W, bh);
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.stroke();
+  const s = Math.min(48, bh - 30);
+  const icons = [drawSearchIcon, drawChromeIcon, drawMinecraftIcon, drawLoLIcon];
+  const gap = s * 0.55;
+  const totalW = icons.length * s + (icons.length - 1) * gap;
+  const cy = groundY + bh / 2 + 2;
+  let cx = W / 2 - totalW / 2 + s / 2;
+  for (const fn of icons) { fn(cx, cy, s); cx += s + gap; }
+}
+function iconBg(cx, cy, s, fill) { ctx.fillStyle = fill; ctx.beginPath(); if (ctx.roundRect) { ctx.roundRect(cx - s / 2, cy - s / 2, s, s, s * 0.22); } else { ctx.rect(cx - s / 2, cy - s / 2, s, s); } ctx.fill(); }
+function drawSearchIcon(cx, cy, s) {
+  iconBg(cx, cy, s, "#2b2e3a");
+  const r = s * 0.2; ctx.strokeStyle = "#e8ecff"; ctx.lineWidth = Math.max(2, s * 0.06); ctx.lineCap = "round";
+  ctx.beginPath(); ctx.arc(cx - s * 0.07, cy - s * 0.07, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx + s * 0.08, cy + s * 0.08); ctx.lineTo(cx + s * 0.22, cy + s * 0.22); ctx.stroke();
+}
+function drawChromeIcon(cx, cy, s) {
+  const r = s / 2 * 0.94; ctx.save(); ctx.translate(cx, cy);
+  const cols = ["#ea4335", "#34a853", "#fbbc05"];
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, r, (i * 120 - 90) * Math.PI / 180, ((i + 1) * 120 - 90) * Math.PI / 180); ctx.closePath(); ctx.fillStyle = cols[i]; ctx.fill(); }
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(0, 0, r * 0.55, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#4285f4"; ctx.beginPath(); ctx.arc(0, 0, r * 0.42, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+function drawMinecraftIcon(cx, cy, s) {
+  const q = s * 0.9, x0 = cx - q / 2, y0 = cy - q / 2;
+  ctx.fillStyle = "#7a5a3a"; ctx.fillRect(x0, y0, q, q);           // pământ
+  ctx.fillStyle = "#5aab3a"; ctx.fillRect(x0, y0, q, q * 0.34);     // iarbă
+  ctx.fillStyle = "rgba(0,0,0,0.16)";
+  const p = q / 4;
+  ctx.fillRect(x0 + p, y0 + q * 0.45, p * 0.8, p * 0.8);
+  ctx.fillRect(x0 + p * 2.4, y0 + q * 0.66, p * 0.8, p * 0.8);
+  ctx.fillStyle = "rgba(255,255,255,0.12)"; ctx.fillRect(x0 + p * 2, y0 + q * 0.05, p * 0.8, p * 0.6);
+  ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 1.5; ctx.strokeRect(x0, y0, q, q);
+}
+function drawLoLIcon(cx, cy, s) {
+  iconBg(cx, cy, s, "#091428");
+  ctx.strokeStyle = "#c8963c"; ctx.lineWidth = Math.max(1.5, s * 0.04);
+  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(cx - s / 2 + 1, cy - s / 2 + 1, s - 2, s - 2, s * 0.2); ctx.stroke(); }
+  ctx.fillStyle = "#c89b3c"; ctx.font = `bold ${Math.round(s * 0.4)}px Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("LoL", cx, cy + 1);
+  ctx.textBaseline = "alphabetic";
 }
 
 function blk(x, y, s, fill) {
@@ -864,7 +904,7 @@ function drawParticles() {
 function loop() {
   frame++;
   ctx.clearRect(0, 0, W, H);
-  drawGround();
+  drawTaskbar();
   structures.forEach(drawStructure);
 
   if (adventureCd-- <= 0) { adventureCd = rand(3600, 9000); startAdventure(); }
