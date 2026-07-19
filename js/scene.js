@@ -853,7 +853,8 @@ window.addEventListener("mouseup", (e) => {
     // consumat de taskbar / fereastra Chrome
   } else if (pointer.cand && pointer.moved < 8) {
     const a = pointer.cand, now = performance.now();
-    if (lastClick.agent === a && now - lastClick.time < 350) { fightSelect(a); lastClick.agent = null; } // dublu-click
+    if (paintWin) { sendToPaint(a); lastClick = { agent: a, time: now }; } // Paint pornit → vine la Paint
+    else if (lastClick.agent === a && now - lastClick.time < 350) { fightSelect(a); lastClick.agent = null; } // dublu-click
     else { a.getHit(pointer.x); lastClick = { agent: a, time: now }; }
   }
   pointer.down = false; pointer.cand = null; pointer.grabbed = null;
@@ -896,7 +897,15 @@ function iconAction(name) {
   else if (name === "paint") openPaint();
   else if (name === "start") pick([openChrome, triggerBuild, triggerRandomFight])();
 }
-function openPaint() { const w = W - 24, h = groundY - 40; paintWin = { x: 12, y: 24, w, h, strokes: [], cur: null, color: "#ffffff" }; }
+function openPaint() { const w = Math.min(560, W - 60), h = Math.min(420, groundY - 80); paintWin = { x: Math.round((W - w) / 2), y: 48, w, h, strokes: [], cur: null, color: "#ffffff" }; }
+function sendToPaint(a) {
+  if (!a || a.isPlayer || a.away || a.state === "held" || a.state === "thrown" || a.state === "leaving") return;
+  if (a.opponent) a.endFight();
+  a._pd = null; a._pdTargets = null; a.gpPhase = undefined; a.gpTargetX = undefined;
+  a.lie = 0; a.sleepPhase = null; a.jumping = false; a.tz = 0; a.building = null;
+  a.state = "gopaint"; a.targetX = null;
+  a.speak(pick(["Vin! 🎨", "La Paint!", "Și eu desenez!"]), 90);
+}
 function closePaint() { paintWin = null; }
 function openNotepad() { const t = 'a = 1\nprint(a)'; notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: t, cursor: t.length }; }
 function closeNotepad() { notepadWin = null; }
