@@ -11,6 +11,8 @@ let groundY = 0;
 let structures = [];
 let particles = []; // praf la aterizare
 let drawings = [];  // desene pe wallpaper
+let weapons = [];   // arme desenate în Paint (sabie/arc), lăsate pe jos (de luat)
+let arrows = [];    // săgeți în zbor
 
 // proporții schelet
 const HIP_Y = -52, THIGH = 26, SHIN = 26, TORSO = 44, NECK = 8, UPPER = 20, FORE = 18;
@@ -111,6 +113,7 @@ class Agent {
     this.scaredTimer = 0; this.fleeDir = 1; this.fleeTimer = 0;
     this.watchTarget = 0; // se uită la Chrome
     this.doodle = null; this.doodleReveal = 0; this.drawTimer = 0; // desenat pe wallpaper
+    this.weapon = null; // "sword" | "bow" | null
   }
 
   enterScared() {
@@ -365,16 +368,17 @@ class Agent {
           const handSX = this.x + this.face * 22, handSY = (groundY - this.tz) - 130;
           const size = rand(cv.w * 0.05, cv.w * 0.09);
           const lcx = clamp(handSX - cv.x, size + 4, cv.w - size - 4), lcy = clamp(handSY - cv.y, size + 4, cv.h - size - 4);
-          this._pd = makeDoodle(lcx, lcy, size, this.c.color);
+          this._pdWeapon = Math.random() < 0.55 ? (Math.random() < 0.5 ? "sword" : "bow") : null; // uneori desenează o armă
+          this._pd = this._pdWeapon === "sword" ? makeSwordDoodle(lcx, lcy, size, this.c.color) : this._pdWeapon === "bow" ? makeBowDoodle(lcx, lcy, size, this.c.color) : makeDoodle(lcx, lcy, size, this.c.color);
           this._pdReveal = 0; this._pdTimer = Math.max(50, this._pd.totalPts * 1.2);
           this._pdTargets = this._pd.strokes.map(s => { const o = { color: this.c.color, w: 3, pts: [] }; paintWin.strokes.push(o); return { src: s, dst: o }; });
-          this.gpPhase = "draw"; this.speak(pick(["Și eu! 🎨", "Uite ce fac!", "Arta mea!"]), 90);
+          this.gpPhase = "draw"; this.speak(this._pdWeapon === "bow" ? pick(["Un arc! 🏹", "Fac o armă!"]) : this._pdWeapon === "sword" ? pick(["O sabie! ⚔️", "Fac o armă!"]) : pick(["Și eu! 🎨", "Uite ce fac!", "Arta mea!"]), 90);
         }
       } else if (this.gpPhase === "draw") { // desenează perched, în pânză
         this._pdReveal += this._pd.totalPts / this._pdTimer;
         const cnt = Math.floor(this._pdReveal); let used = 0;
         for (const t of this._pdTargets) { const take = clamp(cnt - used, 0, t.src.length); t.dst.pts = t.src.slice(0, take); used += t.src.length; }
-        if (cnt >= this._pd.totalPts) { this._pd = null; this._pdTargets = null; this.gpPhase = "fall"; this.climbV = 0; this.speak(pick(["Gata! 🎨", "Frumos!"]), 80); }
+        if (cnt >= this._pd.totalPts) { if (this._pdWeapon) { weapons.push({ x: clamp(this.x, 60, W - 60), type: this._pdWeapon, taken: false, bob: Math.random() * 6 }); this._pdWeapon = null; } this._pd = null; this._pdTargets = null; this.gpPhase = "fall"; this.climbV = 0; this.speak(pick(["Gata! ⚔️", "O armă!", "Frumos!"]), 80); }
       } else { // cade jos
         this.climbV += 0.9; this.tz -= this.climbV;
         if (this.tz <= 0) { this.tz = 0; this.gpPhase = undefined; this.gpTargetX = undefined; this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 5); }
@@ -419,6 +423,17 @@ class Agent {
         if (this.tz <= 0) { this.tz = 0; this.state = "walk"; this.climbWin = null; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 6); }
       }
     }
+    else if (this.state === "getweapon") { // merge la armă, o ia, se uită la ea, apoi zice
+      const wp = this._wpT;
+      if (this._admire === undefined) {
+        if (!wp || wp.taken) { this._wpT = null; this.state = "walk"; this.targetX = null; return; }
+        const dx = wp.x - this.x;
+        if (Math.abs(dx) < 12) { wp.taken = true; this.weapon = wp.type; this._admire = 75; this.face = 1; }
+        else if (!this.jumping) { this.x += Math.sign(dx) * this.speed * 1.8; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.16; }
+      } else {
+        if (--this._admire <= 0) { this._admire = undefined; this._wpT = null; this.state = "idle"; this.stateTimer = rand(40, 90); this.speak(this.weapon === "bow" ? pick(["Am arc! 🏹", "La țintă!", "Trag!"]) : pick(["Am sabie! ⚔️", "În gardă!", "La luptă!"]), 100); }
+      }
+    }
     else if (this.state === "run") {
       if (this.targetX === null) { this.state = "walk"; this.stateTimer = rand(40, 100); }
       else {
@@ -439,21 +454,24 @@ class Agent {
     else if (this.state === "fight") {
       const o = this.opponent;
       if (!o) { this.state = "walk"; return; }
-      const dx = o.x - this.x;
-      const d = Math.abs(dx) || 1;
+      const dx = o.x - this.x, d = Math.abs(dx) || 1;
       this.face = dx >= 0 ? 1 : -1;
-      if (d > 66) { this.x += Math.sign(dx) * (this.speed + 0.5); this.walkPhase += 0.16; }
-      else if (d < 52) { // prea aproape → se depărtează (nu se suprapun)
+      const bow = this.weapon === "bow", wantD = bow ? 210 : 60;
+      if (d > wantD + 8) { this.x += Math.sign(dx) * (this.speed + 0.5); this.walkPhase += 0.16; }
+      else if (d < wantD - 8 && !bow) { // corp la corp: nu se suprapun
         const s = dx !== 0 ? Math.sign(dx) : (agents.indexOf(this) < agents.indexOf(o) ? 1 : -1);
         this.x -= s * (this.speed + 0.5); this.walkPhase += 0.13;
       }
       else if (this.attacker && this.punchTimer-- <= 0) {
-        this.punchTimer = rand(30, 50);
-        this.attackType = Math.random() < 0.5 ? "punch" : "kick";
+        this.punchTimer = rand(bow ? 45 : 30, bow ? 70 : 50);
         this.attackAnim = 16;
-        o.recoil = this.attackType === "kick" ? 18 : 14;
-        o.stars = [{ ang: 0, r: 22 }, { ang: 2, r: 22 }, { ang: 4, r: 22 }];
-        if (!o.say) o.speak(pick(o.c.hitLines), 45);
+        if (bow) { this.attackType = "bow"; arrows.push({ x: this.x + this.face * 20, y: groundY - 96, vx: this.face * 9, foe: o, life: 160 }); }
+        else {
+          this.attackType = this.weapon === "sword" ? "punch" : (Math.random() < 0.5 ? "punch" : "kick");
+          o.recoil = this.attackType === "kick" ? 18 : 14;
+          o.stars = [{ ang: 0, r: 22 }, { ang: 2, r: 22 }, { ang: 4, r: 22 }];
+          if (!o.say) o.speak(pick(o.c.hitLines), 45);
+        }
         this.attacker = false; o.attacker = true; o.punchTimer = rand(24, 40);
       }
       if (--this.stateTimer <= 0) this.endFight();
@@ -467,7 +485,12 @@ class Agent {
           this.sleepDir = Math.random() < 0.5 ? 1 : -1; this.speak("...", 60); this.sleepCd = rand(14400, 21600);
         } else {
           const r = Math.random();
-          if (r < 0.012 && this.builtCount < 2 && structures.length < 8) {
+          const foe = this.weapon ? agents.find(o => o !== this && !o.isPlayer && !o.away && !o.opponent && (o.state === "walk" || o.state === "idle") && Math.abs(o.x - this.x) < 480) : null;
+          if (this.weapon && foe && r < 0.06) { // înarmat → provoacă la luptă
+            startFightBetween(this, foe);
+          } else if (!this.weapon && weapons.some(s => !s.taken) && r < 0.05) { // neînarmat → ia o armă
+            this._wpT = weapons.find(s => !s.taken); this.state = "getweapon"; this.targetX = null; this.speak(pick(["O armă!", "A mea!", "Hei!"]), 80);
+          } else if (r < 0.012 && this.builtCount < 2 && structures.length < 8) {
             const type = pick(["house", "tower", "tree", "campfire"]);
             this.state = "build"; this.buildDur = rand(340, 480); this.buildTimer = this.buildDur;
             const s = { x: this.x, color: this.c.color, progress: 0, type }; structures.push(s); this.building = s; this.builtCount++;
@@ -636,7 +659,7 @@ class Agent {
     const winClimbHang = st === "climbwin" && this.climbPhase === "hang";
     const hanging = st === "climb" || gpClimb || winClimbMove || winClimbHang;
     const painting = (st === "draw") || (st === "gopaint" && this.gpPhase === "draw");
-    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go") || (st === "climbwin" && this.climbPhase === "go") || (st === "onwin" && this.onWinVX));
+    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && this.gpPhase === "go") || (st === "climbwin" && this.climbPhase === "go") || (st === "onwin" && this.onWinVX) || (st === "getweapon" && this._admire === undefined));
     const running = (st === "run" || st === "leaving" || st === "scared");
     const breathe = Math.sin(this.bob) * 1.5;
     const bodyBob = walking ? Math.sin(this.walkPhase * 2) * 2 : breathe;
@@ -665,7 +688,7 @@ class Agent {
       const sway = Math.sin(this.bob * 2) * 6;
       this.legIK(ctx, -3, hipY, -6 + sway, hipY + 48, -1);
       this.legIK(ctx, 3, hipY, 9 + sway, hipY + 48, -1);
-    } else if (st === "sleep" || st === "build" || st === "idle" || painting || (st === "onwin" && !this.onWinVX)) {
+    } else if (st === "sleep" || st === "build" || st === "idle" || painting || (st === "onwin" && !this.onWinVX) || (st === "getweapon" && this._admire !== undefined)) {
       this.legIK(ctx, -4, hipY, -6, 0, -1);
       this.legIK(ctx, 4, hipY, 6, 0, -1);
     } else {
@@ -741,6 +764,24 @@ class Agent {
       ctx.lineTo(headX + cw / 2, ty - ch * 0.5);
       ctx.lineTo(headX + cw / 2, ty);
       ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+
+    // ===== ARMĂ în mână =====
+    if (this.weapon) {
+      const admiring = st === "getweapon" && this._admire !== undefined;
+      ctx.save();
+      if (admiring) { ctx.translate(shX + 12, shY + 10); ctx.rotate(-0.6 + Math.sin(this.bob * 3) * 0.12); } // ține în față, se uită la ea
+      else if (striking) { ctx.translate(shX + 34, asY - 6); ctx.rotate(this.weapon === "bow" ? 0 : -1.05); }
+      else if (st === "fight") { ctx.translate(shX + 16, asY - 2); ctx.rotate(this.weapon === "bow" ? 0 : -0.6); }
+      else { ctx.translate(shX + 12, asY + 14); ctx.rotate(0.35); }
+      if (this.weapon === "bow") {
+        ctx.strokeStyle = "#8a5a2b"; ctx.lineWidth = 3.5; ctx.lineCap = "round"; ctx.beginPath(); ctx.arc(0, 0, 20, -Math.PI * 0.5, Math.PI * 0.5); ctx.stroke();
+        ctx.strokeStyle = "#d8d8d8"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -20); ctx.lineTo(striking ? -6 : 0, 0); ctx.lineTo(0, 20); ctx.stroke();
+      } else {
+        ctx.strokeStyle = "#dfe6f2"; ctx.lineWidth = 4; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -36); ctx.stroke();
+        ctx.strokeStyle = "#c8963c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-7, -2); ctx.lineTo(7, -2); ctx.stroke();
+      }
       ctx.restore();
     }
   }
@@ -859,6 +900,7 @@ function glSupported() { try { return !!document.createElement("canvas").getCont
 window.setFx = (v) => { fxLevel = v; };
 window.getRenderInfo = () => ({ webgl: !!gl, fx: fxLevel });
 window.getMinecraft = () => minecraftWin;
+window.weapons = weapons; window.arrows = arrows;
 let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
@@ -988,6 +1030,7 @@ window.addEventListener("mousedown", (e) => {
     return;
   }
   pointer.cand = nearestAgent(e.clientX, e.clientY);
+  if (!pointer.cand) { const st = structureAt(e.clientX, e.clientY); if (st) pointer.dragStruct = { s: st, ox: e.clientX - st.x, oy: e.clientY - (st.by || groundY) }; } // apucă o casă/structură
 });
 window.addEventListener("mousemove", (e) => {
   pointer.px = pointer.x; pointer.py = pointer.y; pointer.x = e.clientX; pointer.y = e.clientY;
@@ -1018,6 +1061,7 @@ window.addEventListener("mousemove", (e) => {
     for (const mob of m.mobs) { mob.px *= ratio; mob.py *= ratio; mob.vy *= ratio; }
     return;
   }
+  if (pointer.dragStruct) { const d = pointer.dragStruct; d.s.x = clamp(pointer.x - d.ox, 40, W - 40); d.s.by = clamp(pointer.y - d.oy, 120, groundY); return; }
   if (pointer.dragMc) {
     const m = minecraftWin;
     const nx = clamp(pointer.x - pointer.dragMc.ox, -m.w + 120, W - 120), ny = clamp(pointer.y - pointer.dragMc.oy, 0, groundY - 60);
@@ -1044,6 +1088,7 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("mouseup", (e) => {
   if (e.button !== 0) return;
+  if (pointer.dragStruct) { pointer.dragStruct = null; pointer.down = false; return; }
   if (pointer.resizeMc) { pointer.resizeMc = null; pointer.down = false; return; }
   if (pointer.dragMc) { pointer.dragMc = null; pointer.down = false; return; }
   if (pointer.mcBreaking) { pointer.mcBreaking = false; pointer.down = false; return; }
@@ -1130,6 +1175,9 @@ function closePaint() { paintWin = null; }
 function openWindows() { const l = []; if (browserWin) l.push(browserWin); if (stopwatchWin) l.push(stopwatchWin); if (notepadWin) l.push(notepadWin); if (paintWin) l.push(paintWin); return l; }
 // ferestre pe care se poate STA/urca — include Minecraft (dar Minecraft are drag/resize propriu)
 function standWindows() { const l = openWindows(); if (minecraftWin) l.push(minecraftWin); return l; }
+// case/structuri: cutie de coliziune (pt. apucat) și hit-test
+function structBox(s) { const d = { house: [62, 138], tower: [34, 172], tree: [42, 122], campfire: [40, 56] }[s.type] || [50, 120]; return { hw: d[0], h: d[1] }; }
+function structureAt(x, y) { for (let i = structures.length - 1; i >= 0; i--) { const s = structures[i], b = structBox(s), base = s.by || groundY; if (x >= s.x - b.hw && x <= s.x + b.hw && y >= base - b.h && y <= base) return s; } return null; }
 // bara de titlu a unei ferestre (pt. drag), exclude butonul de închidere din dreapta
 function titleBarAt(x, y) { for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w - 30 && y >= w.y && y <= w.y + 28) return w; return null; }
 // mânerul de redimensionare (colț dreapta-jos)
@@ -1284,6 +1332,51 @@ function makeDoodle(cx, cy, s, color) {
     const pts = []; for (let i = 0; i <= 22; i++) pts.push({ x: cx - s + i * (2 * s / 22), y: cy + Math.sin(i * 0.85) * s * 0.4 }); strokes.push(pts);
   }
   return { strokes, color, totalPts: strokes.reduce((a, st) => a + st.length, 0), cx, cy, s };
+}
+function makeSwordDoodle(cx, cy, s, color) {
+  const strokes = [];
+  strokes.push([{ x: cx, y: cy - s * 1.3 }, { x: cx, y: cy + s * 0.5 }]);                    // lama
+  strokes.push([{ x: cx - s * 0.13, y: cy - s * 1.05 }, { x: cx, y: cy - s * 1.35 }, { x: cx + s * 0.13, y: cy - s * 1.05 }]); // vârf
+  strokes.push([{ x: cx - s * 0.5, y: cy + s * 0.5 }, { x: cx + s * 0.5, y: cy + s * 0.5 }]); // gardă
+  strokes.push([{ x: cx, y: cy + s * 0.5 }, { x: cx, y: cy + s * 0.95 }]);                    // mâner
+  return { strokes, color, totalPts: strokes.reduce((a, st) => a + st.length, 0), cx, cy, s, isSword: true };
+}
+function makeBowDoodle(cx, cy, s, color) {
+  const strokes = [];
+  const arc = []; for (let i = 0; i <= 10; i++) { const a = -Math.PI * 0.42 + (Math.PI * 0.84) * i / 10; arc.push({ x: cx + Math.cos(a) * s * 0.9 - s * 0.4, y: cy + Math.sin(a) * s }); }
+  strokes.push(arc);                                                                  // corpul arcului
+  strokes.push([{ x: arc[0].x, y: arc[0].y }, { x: arc[arc.length - 1].x, y: arc[arc.length - 1].y }]); // coarda
+  strokes.push([{ x: cx - s * 0.5, y: cy }, { x: cx + s * 0.9, y: cy }]);             // săgeata
+  return { strokes, color, totalPts: strokes.reduce((a, st) => a + st.length, 0), cx, cy, s, isBow: true };
+}
+function drawSwordIcon(x, y, len, blade) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(-0.5); ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = blade; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(0, -len * 0.75); ctx.lineTo(0, len * 0.3); ctx.stroke();
+  ctx.strokeStyle = "#c8963c"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-len * 0.3, len * 0.3); ctx.lineTo(len * 0.3, len * 0.3); ctx.stroke();
+  ctx.strokeStyle = "#7a5a3a"; ctx.beginPath(); ctx.moveTo(0, len * 0.3); ctx.lineTo(0, len * 0.55); ctx.stroke();
+  ctx.restore();
+}
+function drawBowIcon(x, y, len) {
+  ctx.save(); ctx.translate(x, y); ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = "#8a5a2b"; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.arc(-len * 0.2, 0, len * 0.7, -Math.PI * 0.42, Math.PI * 0.42); ctx.stroke();
+  ctx.strokeStyle = "#d8d8d8"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-len * 0.2 + Math.cos(-Math.PI * 0.42) * len * 0.7, Math.sin(-Math.PI * 0.42) * len * 0.7); ctx.lineTo(-len * 0.2 + Math.cos(Math.PI * 0.42) * len * 0.7, Math.sin(Math.PI * 0.42) * len * 0.7); ctx.stroke();
+  ctx.restore();
+}
+function drawWeapons() {
+  for (const wp of weapons) { if (wp.taken) continue; wp.bob = (wp.bob || 0) + 0.08; const y = groundY - 22 - Math.abs(Math.sin(wp.bob)) * 7; if (wp.type === "bow") drawBowIcon(wp.x, y, 24); else drawSwordIcon(wp.x, y, 24, "#dfe6f2"); }
+}
+function updateArrows() {
+  for (let i = arrows.length - 1; i >= 0; i--) {
+    const a = arrows[i]; a.x += a.vx; a.life--;
+    const o = a.foe;
+    if (o && !o.away && o.state !== "held" && Math.abs(a.x - o.x) < 22) { o.recoil = 14; o.stars = [{ ang: 0, r: 22 }, { ang: 2, r: 22 }, { ang: 4, r: 22 }]; if (!o.say) o.speak(pick(o.c.hitLines), 45); arrows.splice(i, 1); continue; }
+    if (a.life <= 0 || a.x < -30 || a.x > W + 30) arrows.splice(i, 1);
+  }
+}
+function drawArrows() {
+  ctx.save(); ctx.strokeStyle = "#caa46a"; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const a of arrows) { const d = Math.sign(a.vx) || 1; ctx.beginPath(); ctx.moveTo(a.x - d * 14, a.y); ctx.lineTo(a.x, a.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x - d * 6, a.y - 4); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x - d * 6, a.y + 4); ctx.stroke(); }
+  ctx.restore();
 }
 function drawDoodle(d, reveal) {
   const count = reveal === undefined ? d.totalPts : reveal;
@@ -2035,7 +2128,7 @@ function blk(x, y, s, fill) {
 
 // construcții din blocuri stil Minecraft, cresc de jos în sus cu progresul
 function drawStructure(s) {
-  const B = 15, x = s.x, base = groundY, p = s.progress, col = s.color;
+  const B = 15, x = s.x, base = s.by || groundY, p = s.progress, col = s.color;
   const put = (cx, cy, fill) => blk(x + cx * B - B / 2, base - (cy + 1) * B, B, fill);
 
   if (s.type === "house") {
@@ -2102,6 +2195,7 @@ function loop() {
   drawTaskbar();
   drawWallpaper();
   structures.forEach(drawStructure);
+  drawWeapons(); // arme pe jos (de luat)
 
   if (adventureCd-- <= 0) { adventureCd = rand(3600, 9000); if (autoAdventure) startAdventure(); }
   for (let i = _pending.length - 1; i >= 0; i--) {
@@ -2118,6 +2212,7 @@ function loop() {
 
   maybeStartFight();
   agents.forEach(a => a.update(W));
+  updateArrows();
   updateMinecraft();
   drawParticles();
   drawGroundTexts();
@@ -2129,6 +2224,7 @@ function loop() {
   // stickmanii pe layerul cel mai în față — peste tot (cei ținuți în mână deasupra celorlalți)
   const onMc = (a) => minecraftWin && ((a.state === "onwin" && a.onWin === minecraftWin) || (a.state === "climbwin" && a.climbWin === minecraftWin));
   [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => { if (!onMc(a)) a.draw(ctx); });
+  drawArrows(); // săgeți în zbor
   drawMinecraft(); // acoperă tot când e deschis
   agents.forEach(a => { if (onMc(a)) a.draw(ctx); }); // cei care stau PE Minecraft — peste el
   if (showHitboxes) drawHitboxes();
