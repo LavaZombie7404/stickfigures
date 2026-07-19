@@ -307,6 +307,28 @@ class Agent {
         this.speak(pick(["Gata! 🎨", "Frumos, nu?", "Tadaa!"]), 90);
       }
     }
+    else if (this.state === "gopaint") {
+      if (!paintWin) { this._pd = null; this._pdTargets = null; this.state = "walk"; this.targetX = null; return; }
+      const tx = clamp(paintWin.x + paintWin.w / 2, 70, W - 70);
+      if (!this._pd) { // merge spre Paint
+        const dx = tx - this.x;
+        if (Math.abs(dx) < 42) {
+          const cv = paintWin._canvas, cw = cv ? cv.w : 300, ch = cv ? cv.h : 200;
+          this._pd = makeDoodle(rand(cw * 0.22, cw * 0.78), rand(ch * 0.28, ch * 0.72), rand(cw * 0.1, cw * 0.19), this.c.color);
+          this._pdReveal = 0; this._pdTimer = Math.max(60, this._pd.totalPts * 1.4);
+          this._pdTargets = this._pd.strokes.map(s => { const o = { color: this.c.color, w: 3, pts: [] }; paintWin.strokes.push(o); return { src: s, dst: o }; });
+          this.face = 1; this.speak(pick(["Și eu desenez! 🎨", "Arta mea!", "Uite ce fac!"]), 100);
+        } else if (!this.jumping) {
+          const step = Math.sign(dx) * this.speed * 1.7; this.face = dx >= 0 ? 1 : -1;
+          if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.16; }
+        }
+      } else { // desenează în pânză
+        this._pdReveal += this._pd.totalPts / this._pdTimer;
+        const cnt = Math.floor(this._pdReveal); let used = 0;
+        for (const t of this._pdTargets) { const take = clamp(cnt - used, 0, t.src.length); t.dst.pts = t.src.slice(0, take); used += t.src.length; }
+        if (cnt >= this._pd.totalPts) { this._pd = null; this._pdTargets = null; this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); this.speak(pick(["Gata! 🎨", "Frumos, nu?"]), 80); }
+      }
+    }
     else if (this.state === "run") {
       if (this.targetX === null) { this.state = "walk"; this.stateTimer = rand(40, 100); }
       else {
@@ -361,7 +383,10 @@ class Agent {
             const s = { x: this.x, color: this.c.color, progress: 0, type }; structures.push(s); this.building = s; this.builtCount++;
             const m = { house: ["Construiesc!", "O casă!"], tower: ["Un turn!", "Sus!"], tree: ["Un copac!", "Verde!"], campfire: ["Un foc!", "Cald!"] };
             this.speak(pick(m[type]), 120);
-          } else if (r < 0.04) {
+          } else if (paintWin && r < 0.03) {
+            this._pd = null; this._pdTargets = null; this.state = "gopaint"; this.targetX = null;
+            this.speak(pick(["La Paint!", "Merg să desenez!", "Și eu vreau!"]), 90);
+          } else if (r < 0.055) {
             const cx = clamp(this.x + rand(-40, 40), 90, W - 90);
             const cy = rand(90, Math.max(130, groundY - 190));
             this.doodle = makeDoodle(cx, cy, rand(30, 48), this.c.color);
@@ -493,7 +518,8 @@ class Agent {
 
   drawSkeleton(ctx) {
     const c = this.c, st = this.state;
-    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch");
+    const painting = (st === "draw") || (st === "gopaint" && this._pd);
+    const walking = (st === "walk" || st === "run" || st === "fight" || st === "leaving" || st === "scared" || st === "watch" || (st === "gopaint" && !this._pd));
     const running = (st === "run" || st === "leaving" || st === "scared");
     const breathe = Math.sin(this.bob) * 1.5;
     const bodyBob = walking ? Math.sin(this.walkPhase * 2) * 2 : breathe;
@@ -518,7 +544,7 @@ class Agent {
     } else if (striking && this.attackType === "kick") {
       this.legIK(ctx, -4, hipY, -8, 0, -1);
       ctx.beginPath(); ctx.moveTo(4, hipY); ctx.lineTo(26, hipY + 2); ctx.lineTo(52, hipY - 8); ctx.stroke();
-    } else if (st === "sleep" || st === "build" || st === "idle" || st === "draw") {
+    } else if (st === "sleep" || st === "build" || st === "idle" || painting) {
       this.legIK(ctx, -4, hipY, -6, 0, -1);
       this.legIK(ctx, 4, hipY, 6, 0, -1);
     } else {
@@ -550,7 +576,7 @@ class Agent {
     } else if (st === "build") {
       const hm = Math.sin(this.bob * 5) * 12;
       seg(14, -8 + hm, 22, -22 + hm); seg(-14, -6 - hm, -22, -18 - hm);
-    } else if (st === "draw") {
+    } else if (painting) {
       const w = Math.sin(this.bob * 6) * 5; // mâna se mișcă (desenează)
       seg(16 + w, -18, 28 + w, -30 + w); seg(-10, 14, -14, 26);
     } else if (striking && this.attackType === "punch") {
@@ -683,6 +709,7 @@ let W = 0, H = 0, agents = [];
 let fightCheck = 300;
 let frame = 0;
 let adventureCd = rand(1800, 4200);
+let autoAdventure = true;   // dacă pleacă singuri în expediții (toggle din panou)
 let chromeAutoCd = rand(2400, 5400); // ei deschid Chrome singuri din când în când
 let expedition = null;      // {place, activity}
 let showHitboxes = false;
@@ -690,6 +717,8 @@ let taskIcons = [];         // iconițele din taskbar (pt. click)
 let browserWin = null;      // fereastra Chrome deschisă
 let stopwatchWin = null;    // fereastra cronometru
 let notepadWin = null;      // fereastra notepad
+let paintWin = null;        // fereastra MS Paint
+const PAINT_COLORS = ["#ffffff", "#E63329", "#FF8C1A", "#F5C518", "#46B84B", "#3B7DD8", "#9b4dff", "#111114"];
 const VIDEOS = [
   { t: "Cea mai tare cascadorie 😱", v: "stunt" },
   { t: "10 lucruri pe care nu le știai", v: "facts" },
@@ -736,10 +765,24 @@ function nearestAgent(cx, cy) {
 window.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   pointer.down = true; pointer.downX = e.clientX; pointer.downY = e.clientY; pointer.moved = 0;
+  // Paint: dacă apeși în fereastra Paint nu apuci stickmanii din spate
+  if (paintWin && e.clientX >= paintWin.x && e.clientX <= paintWin.x + paintWin.w && e.clientY >= paintWin.y && e.clientY <= paintWin.y + paintWin.h) {
+    const c = paintWin._canvas;
+    if (c && e.clientX >= c.x && e.clientX <= c.x + c.w && e.clientY >= c.y && e.clientY <= c.y + c.h) {
+      pointer.paint = true;
+      paintWin.cur = { color: paintWin.color, w: 3, pts: [{ x: e.clientX - c.x, y: e.clientY - c.y }] };
+    }
+    return;
+  }
   pointer.cand = nearestAgent(e.clientX, e.clientY);
 });
 window.addEventListener("mousemove", (e) => {
   pointer.px = pointer.x; pointer.py = pointer.y; pointer.x = e.clientX; pointer.y = e.clientY;
+  if (pointer.paint && paintWin && paintWin.cur) {
+    const c = paintWin._canvas;
+    paintWin.cur.pts.push({ x: clamp(pointer.x, c.x, c.x + c.w) - c.x, y: clamp(pointer.y, c.y, c.y + c.h) - c.y });
+    return;
+  }
   if (pointer.down) {
     pointer.moved += Math.hypot(pointer.x - pointer.px, pointer.y - pointer.py);
     if (!pointer.grabbed && pointer.cand && pointer.moved > 8) {
@@ -750,6 +793,10 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("mouseup", (e) => {
   if (e.button !== 0) return;
+  if (pointer.paint) {
+    if (paintWin && paintWin.cur) { paintWin.strokes.push(paintWin.cur); paintWin.cur = null; if (paintWin.strokes.length > 500) paintWin.strokes.shift(); }
+    pointer.paint = false; pointer.down = false; pointer.cand = null; pointer.grabbed = null; return;
+  }
   if (pointer.grabbed) {
     const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py;
     pointer.grabbed.release(vx * 1.3, vy * 1.3);
@@ -777,6 +824,14 @@ function handleUIClick(x, y) {
     if (s._btns) for (const b of s._btns) { if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { swBtn(b.id); return true; } }
     if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h) return true;
   }
+  // Paint
+  if (paintWin) {
+    const p = paintWin;
+    if (p._xb) { const b = p._xb; if (x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s) { closePaint(); return true; } }
+    if (p._sw) for (const sw of p._sw) { if (x >= sw.x && x <= sw.x + sw.s && y >= sw.y && y <= sw.y + sw.s) { p.color = sw.c; return true; } }
+    if (p._clear) { const b = p._clear; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) { p.strokes = []; return true; } }
+    if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return true;
+  }
   // Chrome
   if (browserWin && browserWin._xb) { const b = browserWin._xb; if (x >= b.x && x <= b.x + b.s && y >= b.y && y <= b.y + b.s) { closeChrome(); return true; } }
   if (browserWin) { const b = browserWin; if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return true; }
@@ -789,8 +844,11 @@ function iconAction(name) {
   else if (name === "lol") triggerRandomFight();
   else if (name === "stopwatch") openStopwatch();
   else if (name === "notepad") openNotepad();
+  else if (name === "paint") openPaint();
   else if (name === "start") pick([openChrome, triggerBuild, triggerRandomFight])();
 }
+function openPaint() { const w = W - 24, h = groundY - 40; paintWin = { x: 12, y: 24, w, h, strokes: [], cur: null, color: "#ffffff" }; }
+function closePaint() { paintWin = null; }
 function openNotepad() { const t = 'a = 1\nprint(a)'; notepadWin = { x: Math.min(W - 300, Math.round(W / 2 - 140) + 160), y: 66, w: 288, h: 220, text: t, cursor: t.length }; }
 function closeNotepad() { notepadWin = null; }
 
@@ -980,6 +1038,55 @@ function drawNotepad() {
     if (vr >= 0 && vr < maxLines) { ctx.fillStyle = "#1a1a1a"; ctx.fillRect(px + 8 + lay.curX, py + 6 + vr * lh, 2, 15); }
   }
   ctx.textBaseline = "alphabetic";
+  ctx.restore();
+}
+
+// ---- MS Paint ----
+function drawPaint() {
+  if (!paintWin) return;
+  const p = paintWin;
+  const rr = (x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+  ctx.fillStyle = "#202124"; rr(p.x, p.y, p.w, p.h, 12); ctx.fill();
+  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  // bară titlu
+  ctx.fillStyle = "#35363a"; rr(p.x, p.y, p.w, 28, 12); ctx.fill(); ctx.fillRect(p.x, p.y + 16, p.w, 12);
+  ctx.fillStyle = "#e8ecff"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillText("🎨 Paint", p.x + 12, p.y + 19);
+  const xb = { x: p.x + p.w - 24, y: p.y + 6, s: 18 }; p._xb = xb;
+  const hov = pointer.x >= xb.x && pointer.x <= xb.x + xb.s && pointer.y >= xb.y && pointer.y <= xb.y + xb.s;
+  ctx.fillStyle = hov ? "#e81123" : "#4a4b50"; rr(xb.x, xb.y, xb.s, xb.s, 5); ctx.fill();
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(xb.x + 5, xb.y + 5); ctx.lineTo(xb.x + xb.s - 5, xb.y + xb.s - 5); ctx.moveTo(xb.x + xb.s - 5, xb.y + 5); ctx.lineTo(xb.x + 5, xb.y + xb.s - 5); ctx.stroke();
+  // paletă de culori
+  const ty = p.y + 34, sw = 20, sg = 6; let sx = p.x + 12; p._sw = [];
+  for (const c of PAINT_COLORS) {
+    ctx.fillStyle = c; rr(sx, ty, sw, sw, 4); ctx.fill();
+    if (c === p.color) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; rr(sx - 1.5, ty - 1.5, sw + 3, sw + 3, 5); ctx.stroke(); }
+    else { ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 1; rr(sx, ty, sw, sw, 4); ctx.stroke(); }
+    p._sw.push({ x: sx, y: ty, s: sw, c }); sx += sw + sg;
+  }
+  // buton golire
+  const cb = { x: p.x + p.w - 50, y: ty, w: 38, h: sw }; p._clear = cb;
+  const chov = pointer.x >= cb.x && pointer.x <= cb.x + cb.w && pointer.y >= cb.y && pointer.y <= cb.y + cb.h;
+  ctx.fillStyle = chov ? "#5a2b2b" : "#2b2e3a"; rr(cb.x, cb.y, cb.w, cb.h, 5); ctx.fill();
+  ctx.fillStyle = "#e8ecff"; ctx.font = "13px 'Segoe UI', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("🗑", cb.x + cb.w / 2, ty + sw / 2 + 1); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+  // pânză
+  const c = { x: p.x + 10, y: ty + sw + 8, w: p.w - 20, h: p.y + p.h - (ty + sw + 8) - 10 }; p._canvas = c;
+  ctx.fillStyle = "#14151f"; ctx.fillRect(c.x, c.y, c.w, c.h);
+  ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1; ctx.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
+  ctx.save(); ctx.beginPath(); ctx.rect(c.x, c.y, c.w, c.h); ctx.clip();
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const stroke = (st) => {
+    if (!st.pts.length) return;
+    ctx.strokeStyle = st.color; ctx.fillStyle = st.color; ctx.lineWidth = st.w || 3;
+    if (st.pts.length === 1) { ctx.beginPath(); ctx.arc(c.x + st.pts[0].x, c.y + st.pts[0].y, (st.w || 3) / 2, 0, Math.PI * 2); ctx.fill(); return; }
+    ctx.beginPath(); ctx.moveTo(c.x + st.pts[0].x, c.y + st.pts[0].y);
+    for (let i = 1; i < st.pts.length; i++) ctx.lineTo(c.x + st.pts[i].x, c.y + st.pts[i].y);
+    ctx.stroke();
+  };
+  for (const st of p.strokes) stroke(st);
+  if (p.cur) stroke(p.cur);
+  ctx.restore();
   ctx.restore();
 }
 
@@ -1222,6 +1329,9 @@ window.getExpedition = function () {
   };
 };
 
+window.getAutoAdventure = function () { return autoAdventure; };
+window.setAutoAdventure = function (on) { autoAdventure = !!on; return autoAdventure; };
+
 // trimite gașca în expediție manual (din buton)
 window.triggerExpedition = function () {
   const already = agents.some(a => a.adventure && (a.away || a.state === "leaving"));
@@ -1308,7 +1418,7 @@ function drawTaskbar() {
   ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.stroke();
   const s = Math.min(48, bh - 30);
-  const icons = [["search", drawSearchIcon], ["chrome", drawChromeIcon], ["minecraft", drawMinecraftIcon], ["lol", drawLoLIcon], ["stopwatch", drawStopwatchIcon], ["notepad", drawNotepadIcon]];
+  const icons = [["search", drawSearchIcon], ["chrome", drawChromeIcon], ["minecraft", drawMinecraftIcon], ["lol", drawLoLIcon], ["stopwatch", drawStopwatchIcon], ["notepad", drawNotepadIcon], ["paint", drawPaintIcon]];
   const gap = s * 0.55;
   const totalW = icons.length * s + (icons.length - 1) * gap;
   const cy = groundY + bh / 2 + 2;
@@ -1390,6 +1500,17 @@ function drawNotepadIcon(cx, cy, s) {
   ctx.beginPath(); ctx.moveTo(cx + w * 0.25, cy + h * 0.35); ctx.lineTo(cx + w * 0.55, cy - h * 0.35); ctx.stroke();
 }
 
+function drawPaintIcon(cx, cy, s) {
+  iconBg(cx, cy, s, "#f2ede2");
+  const dots = [["#E63329", -0.19, -0.17], ["#F5C518", 0.17, -0.19], ["#3B7DD8", -0.21, 0.11], ["#46B84B", 0.13, 0.13]];
+  for (const [c, dx, dy] of dots) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(cx + dx * s, cy + dy * s, s * 0.09, 0, Math.PI * 2); ctx.fill(); }
+  // pensulă
+  ctx.strokeStyle = "#7a5a3a"; ctx.lineWidth = Math.max(2, s * 0.05); ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(cx + s * 0.05, cy + s * 0.05); ctx.lineTo(cx + s * 0.28, cy + s * 0.3); ctx.stroke();
+  ctx.strokeStyle = "#c0392b"; ctx.lineWidth = Math.max(3, s * 0.08);
+  ctx.beginPath(); ctx.moveTo(cx + s * 0.28, cy + s * 0.3); ctx.lineTo(cx + s * 0.34, cy + s * 0.36); ctx.stroke();
+}
+
 function blk(x, y, s, fill) {
   ctx.fillStyle = fill; ctx.fillRect(x, y, s, s);
   ctx.strokeStyle = "rgba(0,0,0,0.3)"; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
@@ -1465,7 +1586,7 @@ function loop() {
   drawWallpaper();
   structures.forEach(drawStructure);
 
-  if (adventureCd-- <= 0) { adventureCd = rand(3600, 9000); startAdventure(); }
+  if (adventureCd-- <= 0) { adventureCd = rand(3600, 9000); if (autoAdventure) startAdventure(); }
   for (let i = _pending.length - 1; i >= 0; i--) {
     const p = _pending[i];
     if (--p.t <= 0) { if (!p.a.away) { p.a.state = "leaving"; p.a.exitX = p.exitX; p.a.adventure = true; if (p.a.opponent) p.a.endFight(); } _pending.splice(i, 1); }
@@ -1487,6 +1608,7 @@ function loop() {
   drawBrowser();
   drawStopwatch();
   drawNotepad();
+  drawPaint();
   if (showHitboxes) drawHitboxes();
   requestAnimationFrame(loop);
 }

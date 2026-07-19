@@ -273,12 +273,25 @@ epanel.innerHTML = `
   <div class="chat-head"><span class="cname" style="color:#ffd27a">🗺️ Expediția</span><button class="chat-close">✕</button></div>
   <canvas class="exped-screen" width="308" height="130"></canvas>
   <div class="exped-body"></div>
+  <button class="exped-toggle"></button>
   <button class="exped-go">🚀 Trimite în expediție</button>`;
 document.body.appendChild(epanel);
 const eBody = epanel.querySelector(".exped-body");
 const escreen = epanel.querySelector(".exped-screen");
 const escrx = escreen.getContext("2d");
 const ego = epanel.querySelector(".exped-go");
+const etoggle = epanel.querySelector(".exped-toggle");
+function refreshToggle() {
+  const on = window.getAutoAdventure ? window.getAutoAdventure() : true;
+  etoggle.textContent = on ? "🚶 Pleacă singuri în expediții: DA" : "🚶 Pleacă singuri în expediții: NU";
+  etoggle.classList.toggle("off", !on);
+}
+etoggle.addEventListener("click", () => {
+  const on = window.getAutoAdventure ? window.getAutoAdventure() : true;
+  if (window.setAutoAdventure) window.setAutoAdventure(!on);
+  refreshToggle();
+});
+refreshToggle();
 epanel.querySelector(".chat-close").addEventListener("click", () => epanel.classList.add("hidden"));
 
 ego.addEventListener("click", () => {
@@ -360,6 +373,6 @@ function refreshExped() {
 }
 ebtn.addEventListener("click", () => {
   epanel.classList.toggle("hidden");
-  if (!epanel.classList.contains("hidden")) { refreshExped(); expedTick = setInterval(refreshExped, 1000); requestAnimationFrame(renderScreen); }
+  if (!epanel.classList.contains("hidden")) { refreshToggle(); refreshExped(); expedTick = setInterval(refreshExped, 1000); requestAnimationFrame(renderScreen); }
   else if (expedTick) { clearInterval(expedTick); expedTick = null; }
 });

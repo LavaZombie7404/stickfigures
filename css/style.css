@@ -156,6 +156,15 @@ html, body {
 }
 .exped-go:hover { background: #3a3320; }
 
+.exped-toggle {
+  display: block; width: calc(100% - 24px); margin: 10px 12px 2px;
+  background: #17331e; color: #8ee6a0; border: 1px solid #2f6b3a; border-radius: 12px;
+  padding: 10px; font-size: 14px; font-weight: 700; cursor: pointer;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+.exped-toggle:hover { filter: brightness(1.12); }
+.exped-toggle.off { background: #331717; color: #e69b9b; border-color: #6b2f2f; }
+
 .exped-mems { margin: 8px 0; display: flex; flex-direction: column; gap: 5px; }
 .exped-mem { display: flex; align-items: center; justify-content: space-between; background: #171a30; border: 1px solid #2c3152; border-radius: 8px; padding: 5px 8px 5px 10px; }
 .exped-mem-name { font-size: 14px; font-weight: 700; }
