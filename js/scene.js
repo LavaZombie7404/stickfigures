@@ -963,6 +963,9 @@ window.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
   pointer.down = true; pointer.downX = e.clientX; pointer.downY = e.clientY; pointer.moved = 0;
   if (minecraftWin) { mcBreakAt(e.clientX, e.clientY); return; } // spargi blocuri cu click
+  // redimensionare din colțul dreapta-jos
+  const rw = resizeHandleAt(e.clientX, e.clientY);
+  if (rw) { pointer.resizeWin = { win: rw, ox: e.clientX, oy: e.clientY, w0: rw.w, h0: rw.h }; return; }
   // drag pe bara de titlu → muți fereastra
   const tw = titleBarAt(e.clientX, e.clientY);
   if (tw) { pointer.dragWin = { win: tw, ox: e.clientX - tw.x, oy: e.clientY - tw.y }; return; }
@@ -979,6 +982,12 @@ window.addEventListener("mousedown", (e) => {
 });
 window.addEventListener("mousemove", (e) => {
   pointer.px = pointer.x; pointer.py = pointer.y; pointer.x = e.clientX; pointer.y = e.clientY;
+  if (pointer.resizeWin) {
+    const r = pointer.resizeWin, w = r.win;
+    w.w = clamp(r.w0 + (pointer.x - r.ox), 170, W - w.x - 8);
+    w.h = clamp(r.h0 + (pointer.y - r.oy), 130, groundY - w.y - 8);
+    return;
+  }
   if (pointer.dragWin) {
     const d = pointer.dragWin, w = d.win;
     const nx = clamp(pointer.x - d.ox, -w.w + 80, W - 80), ny = clamp(pointer.y - d.oy, 24, groundY - 60);
@@ -1006,6 +1015,7 @@ window.addEventListener("mousemove", (e) => {
 });
 window.addEventListener("mouseup", (e) => {
   if (e.button !== 0) return;
+  if (pointer.resizeWin) { pointer.resizeWin = null; pointer.down = false; return; }
   if (pointer.dragWin) { pointer.dragWin = null; pointer.down = false; return; }
   if (pointer.paint) {
     if (paintWin && paintWin.cur) { paintWin.strokes.push(paintWin.cur); paintWin.cur = null; if (paintWin.strokes.length > 500) paintWin.strokes.shift(); }
@@ -1088,6 +1098,13 @@ function closePaint() { paintWin = null; }
 function openWindows() { const l = []; if (browserWin) l.push(browserWin); if (stopwatchWin) l.push(stopwatchWin); if (notepadWin) l.push(notepadWin); if (paintWin) l.push(paintWin); return l; }
 // bara de titlu a unei ferestre (pt. drag), exclude butonul de închidere din dreapta
 function titleBarAt(x, y) { for (const w of openWindows()) if (x >= w.x && x <= w.x + w.w - 30 && y >= w.y && y <= w.y + 28) return w; return null; }
+// mânerul de redimensionare (colț dreapta-jos)
+function resizeHandleAt(x, y) { for (const w of openWindows()) if (x >= w.x + w.w - 20 && x <= w.x + w.w && y >= w.y + w.h - 20 && y <= w.y + w.h) return w; return null; }
+function drawResizeHandles() {
+  ctx.save(); ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.lineWidth = 2; ctx.lineCap = "round";
+  for (const w of openWindows()) { const rx = w.x + w.w - 5, ry = w.y + w.h - 5; for (let i = 0; i < 3; i++) { const o = 5 + i * 4; ctx.beginPath(); ctx.moveTo(rx - o, ry); ctx.lineTo(rx, ry - o); ctx.stroke(); } }
+  ctx.restore();
+}
 // pe ce se lasă un stickman apucat (fereastră sau desen) — ca să rămână acolo
 function dropTarget(x, y) {
   // orice y DEASUPRA ferestrei (până la baza ei), în coloana ei → se prinde pe ea
@@ -2071,6 +2088,7 @@ function loop() {
   drawStopwatch();
   drawNotepad();
   drawPaint();
+  drawResizeHandles();
   // stickmanii pe layerul cel mai în față — peste tot (cei ținuți în mână deasupra celorlalți)
   [...agents].sort((a, b) => (a.state === "held" ? 1 : 0) - (b.state === "held" ? 1 : 0) || a.x - b.x).forEach(a => a.draw(ctx));
   drawMinecraft(); // acoperă tot când e deschis
