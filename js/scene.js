@@ -639,10 +639,18 @@ let taskIcons = [];         // iconițele din taskbar (pt. click)
 let browserWin = null;      // fereastra Chrome deschisă
 let stopwatchWin = null;    // fereastra cronometru
 const VIDEOS = [
-  "Cea mai tare cascadorie 😱", "10 lucruri pe care nu le știai", "Pisici amuzante compilație 🐱",
-  "Cum să construiești în Minecraft ⛏️", "Cel mai bun montaj LoL 🎮", "Stick figure fights! 🔥",
-  "Muzică chill pentru relaxat 🎧", "Speedrun record mondial", "Tutorial redstone avansat",
-  "REACȚIE la videoul ăsta 😮", "Top 5 momente epice", "El a construit ASTA în 24h",
+  { t: "Cea mai tare cascadorie 😱", v: "stunt" },
+  { t: "10 lucruri pe care nu le știai", v: "facts" },
+  { t: "Pisici amuzante compilație 🐱", v: "cat" },
+  { t: "Cum să construiești în Minecraft ⛏️", v: "build" },
+  { t: "Cel mai bun montaj LoL 🎮", v: "fight" },
+  { t: "Stick figure fights! 🔥", v: "fight" },
+  { t: "Muzică chill pentru relaxat 🎧", v: "music" },
+  { t: "Speedrun record mondial", v: "run" },
+  { t: "Tutorial redstone avansat", v: "redstone" },
+  { t: "REACȚIE la videoul ăsta 😮", v: "reaction" },
+  { t: "Top 5 momente epice", v: "countdown" },
+  { t: "El a construit ASTA în 24h", v: "build" },
 ];
 const pointer = { x: -999, y: -999, px: -999, py: -999, down: false, downX: 0, downY: 0, cand: null, grabbed: null, moved: 0 };
 let challenger = null;                        // primul ales prin dublu-click
@@ -768,7 +776,8 @@ function drawStopwatch() {
 }
 function openChrome(auto) {
   const w = Math.min(500, W - 60), h = Math.min(320, groundY - 50);
-  browserWin = { x: Math.round(W / 2 - w / 2), y: 36, w, h, title: pick(VIDEOS), views: (Math.random() * 9 + 0.3).toFixed(1) + "M", t0: frame, dur: rand(780, 1320) }; // videoul ține ~13-22s apoi se închide
+  const vid = pick(VIDEOS);
+  browserWin = { x: Math.round(W / 2 - w / 2), y: 36, w, h, title: vid.t, vtype: vid.v, views: (Math.random() * 9 + 0.3).toFixed(1) + "M", t0: frame, dur: rand(780, 1320) }; // videoul ține ~13-22s apoi se închide
   const avail = agents.filter(a => a.state === "walk" || a.state === "idle" || a.state === "scared");
   avail.forEach((a, i) => { a.state = "watch"; a.lie = 0; a.sleepPhase = null; a.jumping = false; if (a.opponent) a.endFight(); a.watchTarget = browserWin.x + w * 0.12 + i * (w * 0.76) / Math.max(1, avail.length - 1); });
 }
@@ -791,6 +800,74 @@ function triggerRandomFight() {
   if (b) startFightBetween(a, b);
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
+
+function miniStick(x, gy, h, color, face, pose, t) {
+  ctx.save(); ctx.translate(x, gy); ctx.scale(face, 1);
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = Math.max(2, h * 0.06); ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const hip = -h * 0.45, sh = -h * 0.78, r = h * 0.13, hy = sh - h * 0.08 - r;
+  const ph = pose === "run" ? t * 0.4 : t * 0.12, sw = (pose === "run") ? Math.sin(ph) * h * 0.18 : Math.sin(ph) * h * 0.05;
+  if (pose === "tuck") { ctx.beginPath(); ctx.moveTo(0, hip); ctx.lineTo(h * 0.14, hip + h * 0.1); ctx.moveTo(0, hip); ctx.lineTo(-h * 0.14, hip + h * 0.1); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.moveTo(0, hip); ctx.lineTo(-h * 0.12 + sw, 0); ctx.moveTo(0, hip); ctx.lineTo(h * 0.12 - sw, 0); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(0, hip); ctx.lineTo(0, sh); ctx.stroke();
+  if (pose === "punch") { ctx.beginPath(); ctx.moveTo(0, sh + 3); ctx.lineTo(h * 0.32, sh); ctx.moveTo(0, sh + 3); ctx.lineTo(-h * 0.12, sh + h * 0.14); ctx.stroke(); }
+  else if (pose === "recoil") { ctx.beginPath(); ctx.moveTo(0, sh + 3); ctx.lineTo(-h * 0.2, sh - h * 0.06); ctx.moveTo(0, sh + 3); ctx.lineTo(-h * 0.12, sh + h * 0.14); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.moveTo(0, sh + 3); ctx.lineTo(-h * 0.14 + sw, sh + h * 0.18); ctx.moveTo(0, sh + 3); ctx.lineTo(h * 0.14 - sw, sh + h * 0.18); ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(0, hy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// mini-video diferit în funcție de titlu
+function drawVideoContent(vx, vy, vw, vh, type, t) {
+  ctx.save(); ctx.beginPath(); ctx.rect(vx, vy, vw, vh); ctx.clip();
+  const cx = vx + vw / 2, cy = vy + vh / 2;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  if (type === "music") {
+    const bars = 18, bw = vw / bars * 0.62;
+    for (let i = 0; i < bars; i++) { const bh = (0.2 + 0.8 * Math.abs(Math.sin(t * 0.15 + i * 0.55))) * vh * 0.55; ctx.fillStyle = `hsl(${(i * 20 + t) % 360},70%,55%)`; ctx.fillRect(vx + i * vw / bars + vw / bars * 0.19, cy - bh / 2, bw, bh); }
+    ctx.fillStyle = "#fff"; ctx.font = `${vh * 0.3}px serif`; ctx.fillText("🎧", cx, cy);
+  } else if (type === "fight") {
+    const gy = cy + vh * 0.26, hit = Math.sin(t * 0.18) > 0.6;
+    miniStick(cx - vw * 0.15, gy, vh * 0.5, "#4aa3ff", 1, hit ? "punch" : "idle", t);
+    miniStick(cx + vw * 0.15, gy, vh * 0.5, "#ff5555", -1, hit ? "recoil" : "idle", t);
+    if (hit) { ctx.fillStyle = "#ffd23f"; ctx.font = `${vh * 0.24}px serif`; ctx.fillText("💥", cx, gy - vh * 0.22); }
+  } else if (type === "build") {
+    const cols = 6, rows = 5, per = 16, cyc = cols * rows * per + 60, shown = Math.floor((t % cyc) / per);
+    const B = Math.min(vw / (cols + 1), vh / (rows + 1)) * 0.92, x0 = cx - cols * B / 2, y0 = cy + rows * B / 2;
+    for (let k = 0; k < Math.min(shown, cols * rows); k++) { const r = Math.floor(k / cols), c = k % cols; ctx.fillStyle = (r === rows - 1) ? "#5aab3a" : "#7a5a3a"; ctx.fillRect(x0 + c * B, y0 - (r + 1) * B, B - 1, B - 1); }
+  } else if (type === "run") {
+    const gy = cy + vh * 0.26; ctx.strokeStyle = "#555"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(vx, gy); ctx.lineTo(vx + vw, gy); ctx.stroke();
+    for (let i = 0; i < 9; i++) { const dx = vx + ((i * vw / 9 - (t * 4) % (vw / 9))); ctx.strokeStyle = "#777"; ctx.beginPath(); ctx.moveTo(dx, gy + 5); ctx.lineTo(dx + 10, gy + 5); ctx.stroke(); }
+    miniStick(cx, gy, vh * 0.5, "#7ee6a0", 1, "run", t);
+    ctx.fillStyle = "#ffde3b"; ctx.font = `bold ${vh * 0.13}px monospace`; ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText((t / 60).toFixed(2) + "s", vx + vw - 6, vy + 6);
+  } else if (type === "cat") {
+    const by = Math.sin(t * 0.1) * 4, e = vh * 0.28; ctx.save(); ctx.translate(cx, cy + by);
+    ctx.fillStyle = "#e0a24a"; ctx.beginPath(); ctx.moveTo(-e * 0.7, -e * 0.5); ctx.lineTo(-e * 0.45, -e * 1.15); ctx.lineTo(-e * 0.1, -e * 0.65); ctx.closePath(); ctx.moveTo(e * 0.7, -e * 0.5); ctx.lineTo(e * 0.45, -e * 1.15); ctx.lineTo(e * 0.1, -e * 0.65); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, e, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(-e * 0.35, -e * 0.05, 3, 0, 7); ctx.arc(e * 0.35, -e * 0.05, 3, 0, 7); ctx.fill();
+    ctx.fillStyle = "#f9a"; ctx.beginPath(); ctx.moveTo(-4, e * 0.18); ctx.lineTo(4, e * 0.18); ctx.lineTo(0, e * 0.34); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = "#eee"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(e * 0.2, e * 0.2); ctx.lineTo(e * 0.9, e * 0.1); ctx.moveTo(-e * 0.2, e * 0.2); ctx.lineTo(-e * 0.9, e * 0.1); ctx.stroke();
+    ctx.restore();
+  } else if (type === "stunt") {
+    const p = (t % 170) / 170, sx = vx + p * vw, sy = cy + Math.sin(p * Math.PI) * (-vh * 0.32);
+    ctx.save(); ctx.translate(sx, sy); ctx.rotate(p * Math.PI * 4); miniStick(0, vh * 0.15, vh * 0.42, "#ff8c1a", 1, "tuck", t); ctx.restore();
+    ctx.fillStyle = "#fff"; ctx.font = `${vh * 0.18}px serif`; ctx.textBaseline = "top"; ctx.fillText("😱", vx + vw * 0.5, vy + 4);
+  } else if (type === "facts") {
+    const on = Math.sin(t * 0.2) > 0; ctx.fillStyle = on ? "#ffd23f" : "#5a5a45"; ctx.font = `${vh * 0.42}px serif`; ctx.fillText("💡", cx, cy - vh * 0.06);
+    ctx.fillStyle = "#e8ecff"; ctx.font = `bold ${vh * 0.2}px 'Segoe UI', sans-serif`; ctx.fillText("Fapt #" + (1 + Math.floor(t / 40) % 10), cx, cy + vh * 0.34);
+  } else if (type === "reaction") {
+    const sh = Math.sin(t * 0.15) > 0.3; ctx.font = `${vh * 0.55}px serif`; ctx.fillText(sh ? "😮" : "🙂", cx, cy);
+  } else if (type === "countdown") {
+    const n = Math.max(1, 5 - Math.floor((t % 300) / 60)); ctx.fillStyle = "#ff5555"; ctx.font = `bold ${vh * 0.6}px 'Segoe UI', sans-serif`; ctx.fillText(String(n), cx, cy);
+  } else if (type === "redstone") {
+    const wy = cy; ctx.strokeStyle = "#5a0f0f"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(vx + 12, wy); ctx.lineTo(vx + vw - 12, wy); ctx.stroke();
+    const n = 8; for (let i = 0; i < n; i++) { const px = vx + 12 + (i + 0.5) * (vw - 24) / n, lit = (Math.floor(t * 0.12) % n) === i; ctx.fillStyle = lit ? "#ff3b3b" : "#7a1a1a"; ctx.beginPath(); ctx.arc(px, wy, 6, 0, Math.PI * 2); ctx.fill(); if (lit) { ctx.shadowColor = "#ff3b3b"; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0; } }
+  } else {
+    ctx.fillStyle = "#fff"; ctx.font = `${vh * 0.3}px serif`; ctx.fillText("▶", cx, cy);
+  }
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
+}
+
 function drawBrowser() {
   if (!browserWin) return;
   const b = browserWin;
@@ -809,9 +886,7 @@ function drawBrowser() {
   ctx.fillStyle = "#9aa0b0"; ctx.font = "12px 'Segoe UI', sans-serif"; ctx.fillText("🔒 youtube.com/watch — " + b.title.slice(0, 28), b.x + 22, b.y + 51);
   const vx = b.x + 12, vy = b.y + 66, vw = b.w - 24, vh = b.h - 66 - 42;
   ctx.fillStyle = "#000"; ctx.fillRect(vx, vy, vw, vh);
-  const bars = 18, bw = vw / bars * 0.62, t = frame * 0.15;
-  for (let i = 0; i < bars; i++) { const bh2 = (0.2 + 0.8 * Math.abs(Math.sin(t + i * 0.55))) * vh * 0.55; ctx.fillStyle = `hsl(${(i * 20 + frame) % 360},70%,55%)`; ctx.fillRect(vx + i * vw / bars + vw / bars * 0.19, vy + vh / 2 - bh2 / 2, bw, bh2); }
-  ctx.fillStyle = "rgba(255,255,255,0.85)"; const px = vx + vw / 2, py = vy + vh / 2, pr = vh * 0.13; ctx.beginPath(); ctx.moveTo(px - pr * 0.6, py - pr); ctx.lineTo(px - pr * 0.6, py + pr); ctx.lineTo(px + pr, py); ctx.closePath(); ctx.fill();
+  drawVideoContent(vx, vy, vw, vh, b.vtype, frame - b.t0);
   const prog = clamp((frame - b.t0) / b.dur, 0, 1);
   ctx.fillStyle = "#555"; ctx.fillRect(vx, vy + vh - 4, vw, 4); ctx.fillStyle = "#ff0000"; ctx.fillRect(vx, vy + vh - 4, vw * prog, 4);
   ctx.fillStyle = "#e8ecff"; ctx.font = "bold 14px 'Segoe UI', sans-serif"; ctx.fillText(b.title, b.x + 12, vy + vh + 22);
