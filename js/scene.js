@@ -378,10 +378,14 @@ class Agent {
         this._pdReveal += this._pd.totalPts / this._pdTimer;
         const cnt = Math.floor(this._pdReveal); let used = 0;
         for (const t of this._pdTargets) { const take = clamp(cnt - used, 0, t.src.length); t.dst.pts = t.src.slice(0, take); used += t.src.length; }
-        if (cnt >= this._pd.totalPts) { if (this._pdWeapon) { weapons.push({ x: clamp(this.x, 60, W - 60), type: this._pdWeapon, taken: false, bob: Math.random() * 6 }); this._pdWeapon = null; } this._pd = null; this._pdTargets = null; this.gpPhase = "fall"; this.climbV = 0; this.speak(pick(["Gata! ⚔️", "O armă!", "Frumos!"]), 80); }
+        if (cnt >= this._pd.totalPts) { if (this._pdWeapon) { this.weapon = this._pdWeapon; this._justForged = true; this._pdWeapon = null; } this._pd = null; this._pdTargets = null; this.gpPhase = "fall"; this.climbV = 0; this.speak(this.weapon ? "Gata! ⚔️" : pick(["Gata! 🎨", "Frumos!"]), 80); }
       } else { // cade jos
         this.climbV += 0.9; this.tz -= this.climbV;
-        if (this.tz <= 0) { this.tz = 0; this.gpPhase = undefined; this.gpTargetX = undefined; this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); this.squash = 1; spawnDust(this.x, groundY, 5); }
+        if (this.tz <= 0) {
+          this.tz = 0; this.gpPhase = undefined; this.gpTargetX = undefined; this.targetX = null; this.squash = 1; spawnDust(this.x, groundY, 5);
+          if (this._justForged) { this._justForged = false; this.state = "getweapon"; this._admire = 75; this._wpT = null; } // se uită la armă apoi zice
+          else { this.state = "idle"; this.stateTimer = rand(60, 140); }
+        }
       }
     }
     else if (this.state === "climb") { // se urcă pe un desen de pe wallpaper
