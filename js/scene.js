@@ -47,6 +47,20 @@ class Agent {
     this.awayTimer = 0;
     this.exitX = 0;
     this.adventure = false;
+    this.burning = false;   // a luat foc
+    this.burnTimer = 0;
+    this.willWater = false; // 1/4 șansă: pune apă cu găleata
+    this.waterAnim = 0;
+    this.burnCd = 0;
+  }
+
+  wouldCollide(nx) {
+    if (this.jumping) return false;
+    for (const o of agents) {
+      if (o === this || o.away || o.jumping) continue;
+      if (Math.abs(nx - o.x) < 38 && Math.abs(nx - o.x) < Math.abs(this.x - o.x)) return true; // s-ar apropia sub distanța minimă
+    }
+    return false;
   }
 
   returnFromAdventure(W) {
@@ -98,10 +112,33 @@ class Agent {
     // salt peste alții (overlay peste mers/alergare)
     if (this.jumpCd > 0) this.jumpCd--;
     if (this.jumping) {
-      this.jumpT += 1 / 28;
-      this.x += this.face * (this.speed + 1.8);
-      this.walkPhase += 0.22;
+      this.jumpT += 1 / 34;
+      this.x += this.face * (this.speed + 2.4);
+      this.walkPhase += 0.2;
       if (this.jumpT >= 1) { this.jumping = false; this.jumpT = 0; this.jumpCd = 30; }
+    }
+
+    // ---- FOC: intră în foc → arde ----
+    if (this.burnCd > 0) this.burnCd--;
+    if (this.waterAnim > 0) { this.waterAnim--; if (this.waterAnim === 0) this.speak("O iau înapoi.", 70); }
+    if (this.burning) {
+      if (--this.burnTimer <= 0) {
+        this.burning = false; this.burnCd = 120;
+        if (this.willWater) { this.waterAnim = 70; this.state = "idle"; this.targetX = null; this.speak("Apă! 🪣", 90); }
+        else this.speak(pick(["Uf! Gata.", "Am scăpat!"]), 80);
+      }
+    } else if (this.burnCd <= 0 && this.waterAnim <= 0 &&
+               (this.state === "walk" || this.state === "run" || this.state === "idle")) {
+      for (const s of structures) {
+        if (s.type === "campfire" && s.progress > 0.5 && Math.abs(s.x - this.x) < 26) {
+          this.burning = true;
+          this.willWater = Math.random() < 0.25;      // 1/4 șansă să pună apă
+          this.burnTimer = this.willWater ? 120 : 300; // 2s (apoi apă) sau 5s
+          this.state = "run"; this.targetX = rand(80, W - 80); // panică
+          this.speak("Arde! 🔥", 100);
+          break;
+        }
+      }
     }
 
     if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
@@ -136,7 +173,11 @@ class Agent {
       else {
         const dx = this.targetX - this.x;
         if (Math.abs(dx) < 6) { this.targetX = null; this.state = "walk"; this.stateTimer = rand(40, 120); }
-        else if (!this.jumping) { this.x += Math.sign(dx) * this.speed * 2.6; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.34; }
+        else if (!this.jumping) {
+          const step = Math.sign(dx) * this.speed * 2.6;
+          this.face = dx >= 0 ? 1 : -1;
+          if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.34; }
+        }
       }
     }
     else if (this.state === "sleep") {
@@ -191,7 +232,11 @@ class Agent {
       if (this.state === "walk" && this.targetX !== null && !this.jumping) {
         const dx = this.targetX - this.x;
         if (Math.abs(dx) < 4) this.targetX = null;
-        else { this.x += Math.sign(dx) * this.speed; this.face = dx >= 0 ? 1 : -1; this.walkPhase += 0.18; }
+        else {
+          const step = Math.sign(dx) * this.speed;
+          this.face = dx >= 0 ? 1 : -1;
+          if (!this.wouldCollide(this.x + step)) { this.x += step; this.walkPhase += 0.18; }
+        }
       }
     }
 
@@ -220,7 +265,7 @@ class Agent {
     const feetY = Math.round(groundY);
     const x = Math.round(this.x - (this.recoil || 0) * this.face);
 
-    const jumpY = this.jumping ? Math.sin(this.jumpT * Math.PI) * 74 : 0; // arc peste ceilalți
+    const jumpY = this.jumping ? Math.sin(this.jumpT * Math.PI) * 155 : 0; // arc peste capul lor
 
     ctx.save();
     ctx.translate(x, feetY - jumpY);
@@ -313,6 +358,36 @@ class Agent {
       this.stars.forEach(s => star(ctx, leanX + Math.cos(s.ang) * s.r, headCy - 8 + Math.sin(s.ang) * s.r * 0.6, 6));
     }
 
+    // ---- flăcări (arde) ----
+    if (this.burning) {
+      const cols = ["#ff6a12", "#ff9a2e", "#ffd23f"];
+      for (let i = 0; i < 6; i++) {
+        const fx = leanX + (i - 2.5) * 8;
+        const fbase = (i % 2 ? shoulderY + 20 : hipY);
+        const fh = 22 + Math.sin(frame * 0.5 + i * 1.3) * 10;
+        ctx.fillStyle = cols[i % 3];
+        ctx.beginPath();
+        ctx.moveTo(fx - 6, fbase);
+        ctx.quadraticCurveTo(fx, fbase - fh, fx + 6, fbase);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+
+    // ---- găleată + apă (stinge focul, ca Minecraft) ----
+    if (this.waterAnim > 0) {
+      const bx = 22;
+      ctx.strokeStyle = "#aeb4d0"; ctx.lineWidth = 3;
+      ctx.beginPath(); // găleată (trapez)
+      ctx.moveTo(bx - 9, -22); ctx.lineTo(bx - 7, -6); ctx.lineTo(bx + 7, -6); ctx.lineTo(bx + 9, -22);
+      ctx.stroke();
+      ctx.globalAlpha = Math.min(1, this.waterAnim / 45);
+      ctx.fillStyle = "#3b7dd8";
+      ctx.beginPath(); ctx.ellipse(0, -3, 28, 7, 0, 0, Math.PI * 2); ctx.fill(); // baltă
+      ctx.fillStyle = "rgba(120,180,255,0.8)";
+      ctx.fillRect(bx - 4, -6, 8, 8); // stropi
+      ctx.globalAlpha = 1;
+    }
+
     ctx.restore();
 
     // ---- mesaj deasupra ----
@@ -378,6 +453,17 @@ function startAdventure() {
 }
 const _pending = [];
 function setTimeoutLeave(a, exitX, delay) { _pending.push({ a, exitX, t: delay }); }
+
+// scrii "veniti" în chat → toți se întorc imediat din excursie
+window.recallAdventurers = function () {
+  _pending.length = 0; // anulează plecările care nu s-au produs încă
+  let n = 0;
+  for (const a of agents) {
+    if (a.away) { a.awayTimer = 1; n++; }              // revin în cadrul următor
+    else if (a.state === "leaving") { a.returnFromAdventure(W); n++; }
+  }
+  return n;
+};
 
 function nearestAgent(cx, cy) {
   let best = null, bestD = 1e9;

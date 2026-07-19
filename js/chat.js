@@ -96,6 +96,12 @@ elForm.addEventListener("submit", async (e) => {
   addMsg("user", msg);
   histories[c.id].push({ role: "user", content: msg });
 
+  // comandă specială: cheamă gașca înapoi din excursie
+  if (/^veniti|^veniți|întoarce|veniți acasă/i.test(msg) && window.recallAdventurers) {
+    const n = window.recallAdventurers();
+    addMsg("bot", n > 0 ? "Venim! 🏃" : "Suntem deja aici. 🙂");
+  }
+
   const typing = addMsg("bot typing", "…");
   current.speak("...", 60);
 
@@ -202,6 +208,12 @@ gForm.addEventListener("submit", async (e) => {
   if (!msg) return;
   gInput.value = "";
   gAdd("user", null, null, msg);
+
+  if (/^veniti|^veniți|întoarce|veniți acasă/i.test(msg) && window.recallAdventurers) {
+    const n = window.recallAdventurers();
+    gAdd("bot", null, null, n > 0 ? "🏃 Se întorc toți din excursie!" : "Sunt deja toți aici. 🙂");
+  }
+
   const typing = document.createElement("div");
   typing.className = "cmsg bot typing"; typing.textContent = "toți scriu…";
   gLog.appendChild(typing); gLog.scrollTop = gLog.scrollHeight;
