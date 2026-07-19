@@ -122,7 +122,7 @@ class Agent {
 
   stayOnWindow(w, px, py) { // lăsat (drag) pe o fereastră → rămâne agățat acolo
     this.state = "climbwin"; this.climbWin = w; this.climbPhase = "hang";
-    this.x = clamp(px, 40, W - 40); this.tz = clamp(groundY - py, 30, groundY - 20);
+    this.x = clamp(px, 40, W - 40); this.tz = clamp(groundY - py - 130, 30, groundY - 20); // mâna la punctul de drop, corpul atârnă sub
     this.hangTz = this.tz; this.winGY = py; this.hangTimer = 100000;
     this.face = (w.x + w.w / 2 >= this.x) ? 1 : -1;
     this.lie = 0; this.sleepPhase = null; this.jumping = false; this.building = null;
@@ -951,7 +951,14 @@ window.addEventListener("mousedown", (e) => {
 });
 window.addEventListener("mousemove", (e) => {
   pointer.px = pointer.x; pointer.py = pointer.y; pointer.x = e.clientX; pointer.y = e.clientY;
-  if (pointer.dragWin) { const d = pointer.dragWin, w = d.win; w.x = clamp(pointer.x - d.ox, -w.w + 80, W - 80); w.y = clamp(pointer.y - d.oy, 24, groundY - 60); return; }
+  if (pointer.dragWin) {
+    const d = pointer.dragWin, w = d.win;
+    const nx = clamp(pointer.x - d.ox, -w.w + 80, W - 80), ny = clamp(pointer.y - d.oy, 24, groundY - 60);
+    const ddx = nx - w.x, ddy = ny - w.y; w.x = nx; w.y = ny;
+    // stickmanii agățați pe ea zboară cu fereastra
+    for (const a of agents) if (a.state === "climbwin" && a.climbWin === w) { a.x += ddx; a.tz -= ddy; a.hangTz -= ddy; }
+    return;
+  }
   if (minecraftWin) { if (pointer.down) mcBreakAt(pointer.x, pointer.y); return; } // drag ca să spargi mai multe
   if (pointer.paint && paintWin && paintWin.cur) {
     const c = paintWin._canvas;
