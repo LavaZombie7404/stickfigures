@@ -1140,6 +1140,16 @@ function mcBreakAt(sx, sy) {
   if (ty) { m.grid[r][c] = 0; if (ty === 4) m.wood++; return true; }
   return false;
 }
+// tu pui un bloc cu right-click — doar dacă locul e liber
+function mcPlaceAt(sx, sy) {
+  const m = minecraftWin; if (!m) return false;
+  if (sy < m.y + 26 || sx < m.x || sx > m.x + m.w || sy > m.y + m.h) return false;
+  const c = Math.floor((sx - m.x) / m.tile), r = Math.floor((sy - m.y) / m.tile);
+  if (c < 0 || c >= m.cols || r < 0 || r >= m.rows) return false;
+  if (m.grid[r][c] !== 0) return false; // ocupat deja
+  m.grid[r][c] = 6; // scânduri
+  return true;
+}
 function mcPickAction(m, mob) {
   const r = Math.random();
   if (r < 0.42) { mob.state = "walk"; mob.vx = (Math.random() < 0.5 ? -1 : 1) * rand(0.8, 1.7); mob.face = Math.sign(mob.vx); mob.timer = rand(40, 110); }
@@ -1499,7 +1509,7 @@ function startFightBetween(a, b) {
 }
 // touch: tap = lovitură (fără drag pt. simplitate)
 window.addEventListener("touchstart", (e) => { const t = e.touches[0]; if (t) { pointer.x = t.clientX; pointer.y = t.clientY; const a = nearestAgent(t.clientX, t.clientY); if (a) a.getHit(t.clientX); } }, { passive: true });
-window.addEventListener("contextmenu", (e) => { e.preventDefault(); const a = nearestAgent(e.clientX, e.clientY); if (a && window.openChat) window.openChat(a); });
+window.addEventListener("contextmenu", (e) => { e.preventDefault(); if (minecraftWin) { mcPlaceAt(e.clientX, e.clientY); return; } const a = nearestAgent(e.clientX, e.clientY); if (a && window.openChat) window.openChat(a); });
 
 // aventură
 function avail(a) { return !a.away && !a.isPlayer && !a.chatting && a.state !== "sleep" && a.state !== "leaving" && a.state !== "held" && a.state !== "thrown" && a.state !== "scared"; }
