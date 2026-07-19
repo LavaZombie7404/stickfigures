@@ -1,18 +1,18 @@
-// Scenă full-screen: stick-figures mari care merg pe PĂMÂNT (o linie de sol la bază),
-// doar stânga-dreapta. Uneori se iau la bătaie. Mouse-ul spre un stickman îl lovește.
+// Scenă full-screen: stick-figures cu membre articulate care merg pe pământ.
+// Uneori se culcă ~20s (nu se bat). Click stânga = lovitură. Vorbesc rar.
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-let groundY = 0; // nivelul solului (unde stau picioarele)
+let groundY = 0;
 
 class Agent {
   constructor(c, W) {
     this.c = c;
     this.x = rand(120, W - 120);
     this.face = Math.random() < 0.5 ? 1 : -1;
-    this.speed = rand(0.6, 1.0);
-    this.state = "walk";       // walk | idle | fight | hit
+    this.speed = rand(0.55, 0.95);
+    this.state = "walk";        // walk | idle | fight | hit | sleep
     this.targetX = null;
     this.walkPhase = Math.random() * Math.PI * 2;
     this.bob = Math.random() * Math.PI * 2;
@@ -24,8 +24,11 @@ class Agent {
     this.attacker = false;
     this.recoil = 0;
     this.stars = [];
-    this.say = null;               // { text, ttl }
-    this.chatterTimer = rand(120, 400);
+    this.say = null;
+    this.chatterTimer = rand(300, 900);
+    this.lie = 0;               // 0 = în picioare, 1 = culcat
+    this.sleepPhase = null;     // down | rest | up
+    this.sleepTimer = 0;
   }
 
   speak(text, ttl = 120) { this.say = { text, ttl }; }
@@ -35,8 +38,8 @@ class Agent {
     this.hitCooldown = 40;
     this.state = "hit";
     this.stateTimer = 40;
-    const dir = this.x >= fromX ? 1 : -1;
-    this.vx = dir * 10;
+    this.lie = 0; this.sleepPhase = null;
+    this.vx = (this.x >= fromX ? 1 : -1) * 10;
     this.recoil = 16;
     this.stars = [];
     for (let i = 0; i < 4; i++) this.stars.push({ ang: (Math.PI * 2 * i) / 4, r: 30 });
@@ -60,20 +63,28 @@ class Agent {
     if (this.recoil > 0.5) this.recoil *= 0.85; else this.recoil = 0;
     this.stars.forEach(s => { s.ang += 0.2; s.r *= 0.96; });
 
-    // text deasupra capului
+    // text (rar) + expirare
     if (this.say) { if (--this.say.ttl <= 0) this.say = null; }
     if (--this.chatterTimer <= 0) {
-      this.chatterTimer = rand(300, 700);
+      this.chatterTimer = rand(700, 1500); // ~12-25s între replici
       if (this.state === "walk" || this.state === "idle") this.speak(pick(this.c.chatter), 120);
-    }
-    // celălalt reacționează la pumn în bătaie
-    if (this.state === "fight" && this.opponent && this.opponent.recoil > 10 && !this.opponent.say) {
-      this.opponent.speak(pick(this.opponent.c.hitLines), 45);
     }
 
     if (this.state === "hit") {
       this.x += this.vx; this.vx *= 0.9;
       if (--this.stateTimer <= 0) { this.state = "walk"; this.stateTimer = rand(60, 160); this.targetX = null; }
+    }
+    else if (this.state === "sleep") {
+      if (this.sleepPhase === "down") {
+        this.lie = Math.min(1, this.lie + 0.04);
+        if (this.lie >= 1) { this.sleepPhase = "rest"; this.sleepTimer = 1200; } // ~20s
+      } else if (this.sleepPhase === "rest") {
+        if (--this.sleepTimer <= 0) this.sleepPhase = "up";
+        else if (!this.say && Math.random() < 0.004) this.speak("Zzz", 110);
+      } else {
+        this.lie = Math.max(0, this.lie - 0.05);
+        if (this.lie <= 0) { this.state = "walk"; this.targetX = null; this.stateTimer = rand(80, 180); }
+      }
     }
     else if (this.state === "fight") {
       const o = this.opponent;
@@ -86,13 +97,16 @@ class Agent {
         this.punchTimer = rand(28, 46);
         o.recoil = 14;
         o.stars = [{ ang: 0, r: 22 }, { ang: 2, r: 22 }, { ang: 4, r: 22 }];
+        if (!o.say) o.speak(pick(o.c.hitLines), 45);
         this.attacker = false; o.attacker = true; o.punchTimer = rand(20, 34);
       }
       if (--this.stateTimer <= 0) this.endFight();
     }
     else { // walk / idle
       if (this.targetX === null || this.stateTimer-- <= 0) {
-        if (Math.random() < 0.25) { this.state = "idle"; this.targetX = null; this.stateTimer = rand(40, 120); }
+        const r = Math.random();
+        if (r < 0.07) { this.state = "sleep"; this.sleepPhase = "down"; this.lie = 0; this.speak("...", 60); }
+        else if (r < 0.32) { this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); }
         else { this.state = "walk"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 300); }
       }
       if (this.state === "walk" && this.targetX !== null) {
@@ -108,64 +122,83 @@ class Agent {
   draw(ctx) {
     const c = this.c;
     const walking = (this.state === "walk" || this.state === "fight");
-    const bobY = Math.sin(this.bob) * 3;
-    const x = Math.round(this.x - (this.recoil || 0) * this.face);
     const feetY = Math.round(groundY);
-    const headR = c.headR;
-    const hipY = feetY - 48;
-    const shoulderY = hipY - 42;
-    const headCy = shoulderY - 8 - headR + bobY;
+    const x = Math.round(this.x - (this.recoil || 0) * this.face);
 
     ctx.save();
-    ctx.strokeStyle = c.color;
-    ctx.fillStyle = c.color;
-    ctx.lineWidth = 6;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    ctx.translate(x, feetY);
+    if (this.lie > 0) ctx.rotate(this.lie * (Math.PI / 2) * -this.face); // se lasă pe pământ
 
-    // corp
-    ctx.beginPath(); ctx.moveTo(x, shoulderY + bobY); ctx.lineTo(x, hipY); ctx.stroke();
+    ctx.strokeStyle = c.color; ctx.fillStyle = c.color;
+    ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round";
 
-    // cap: Orange gol (contur), ceilalți umplut
+    const headR = c.headR;
+    const hipY = -50;
+    const breathe = Math.sin(this.bob) * 1.5;
+    const shoulderY = hipY - 42 + breathe;
+    const headCy = shoulderY - 8 - headR;
+
+    // ---- picioare articulate (șold → genunchi → picior) ----
+    const thigh = 25, shin = 25;
+    for (const side of [-1, 1]) {
+      const p = this.walkPhase + (side < 0 ? 0 : Math.PI);
+      const swing = walking ? Math.sin(p) * 0.5 : 0;
+      const lift = walking ? Math.max(0, Math.sin(p)) * 0.7 : 0;
+      const hipX = side * 3;
+      const kneeX = hipX + Math.sin(swing) * thigh;
+      const kneeY = hipY + Math.cos(swing) * thigh;
+      const shinA = swing - lift;
+      const footX = kneeX + Math.sin(shinA) * shin;
+      const footY = kneeY + Math.cos(shinA) * shin;
+      ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(kneeX, kneeY); ctx.lineTo(footX, footY); ctx.stroke();
+    }
+
+    // ---- corp ----
+    ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(0, shoulderY); ctx.stroke();
+
+    // ---- brațe articulate (umăr → cot → mână) ----
+    const upper = 20, fore = 18;
+    if (this.state === "fight" && this.attacker) {
+      const dir = this.face;
+      ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(20 * dir, shoulderY + 2); ctx.lineTo(38 * dir, shoulderY - 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(-10 * dir, shoulderY + 16); ctx.lineTo(-16 * dir, shoulderY + 30); ctx.stroke();
+    } else {
+      for (const side of [-1, 1]) {
+        const p = this.walkPhase + (side < 0 ? Math.PI : 0);
+        const swing = walking ? Math.sin(p) * 0.45 : Math.sin(this.bob + side) * 0.1;
+        const elbowX = Math.sin(swing) * upper;
+        const elbowY = shoulderY + 4 + Math.cos(swing) * upper;
+        const foreA = swing + 0.35;
+        const handX = elbowX + Math.sin(foreA) * fore;
+        const handY = elbowY + Math.cos(foreA) * fore;
+        ctx.beginPath(); ctx.moveTo(0, shoulderY + 4); ctx.lineTo(elbowX, elbowY); ctx.lineTo(handX, handY); ctx.stroke();
+      }
+    }
+
+    // ---- cap ----
     ctx.beginPath();
-    ctx.arc(x, headCy, headR, 0, Math.PI * 2);
+    ctx.arc(0, headCy, headR, 0, Math.PI * 2);
     if (c.hollowHead) ctx.stroke(); else ctx.fill();
 
-    // brațe
-    const swing = Math.sin(this.walkPhase) * (walking ? 14 : 4);
-    if (this.state === "fight" && this.attacker) {
-      ctx.beginPath(); ctx.moveTo(x, shoulderY + 6 + bobY); ctx.lineTo(x + 34 * this.face, shoulderY + 2 + bobY); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x, shoulderY + 6 + bobY); ctx.lineTo(x - 18 * this.face, shoulderY + 26 + bobY); ctx.stroke();
-    } else {
-      ctx.beginPath(); ctx.moveTo(x, shoulderY + 6 + bobY); ctx.lineTo(x - 18, shoulderY + 28 + bobY + swing); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x, shoulderY + 6 + bobY); ctx.lineTo(x + 18, shoulderY + 28 + bobY - swing); ctx.stroke();
-    }
-
-    // picioare (rămân pe sol)
-    const legSwing = Math.sin(this.walkPhase) * (walking ? 16 : 3);
-    ctx.beginPath(); ctx.moveTo(x, hipY); ctx.lineTo(x - 16 + legSwing, feetY); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x, hipY); ctx.lineTo(x + 16 - legSwing, feetY); ctx.stroke();
-
-    // stele la lovitură
+    // ---- stele la lovitură ----
     if (this.stars.length && this.recoil > 1) {
       ctx.fillStyle = "#ffd23f";
-      this.stars.forEach(s => {
-        star(ctx, x + Math.cos(s.ang) * s.r, headCy - 8 + Math.sin(s.ang) * s.r * 0.6, 6);
-      });
+      this.stars.forEach(s => star(ctx, Math.cos(s.ang) * s.r, headCy - 8 + Math.sin(s.ang) * s.r * 0.6, 6));
     }
 
-    // mesaj deasupra capului
+    ctx.restore();
+
+    // ---- mesaj deasupra (în spațiul ecranului, mereu drept) ----
     if (this.say) {
+      ctx.save();
       ctx.globalAlpha = Math.min(1, this.say.ttl / 35);
       ctx.fillStyle = c.color;
       ctx.font = "700 17px 'Segoe UI', sans-serif";
       ctx.textAlign = "center";
       ctx.shadowColor = c.color; ctx.shadowBlur = 10;
-      ctx.fillText(this.say.text, x, headCy - headR - 12);
-      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      ctx.fillText(this.say.text, x, feetY - 150 + this.lie * 95);
+      ctx.restore();
     }
-
-    ctx.restore();
   }
 }
 
@@ -192,26 +225,23 @@ function resize() {
   canvas.width = W * dpr; canvas.height = H * dpr;
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  groundY = Math.max(180, H - 90); // podea aproape de baza ecranului
+  groundY = Math.max(180, H - 90);
 }
 
 function initAgents() { agents = CHARACTERS.map(c => new Agent(c, W)); }
 
-// CLICK stânga pe un stickman = lovitură (nu proximitate). Lovește doar cel mai apropiat.
+// CLICK stânga = lovitură pe cel mai apropiat stickman
 function hitAt(cx, cy) {
   let best = null, bestD = 1e9;
   for (const a of agents) {
-    const torsoY = groundY - 70;
-    const headY = groundY - 90 - a.c.headR;
+    const torsoY = groundY - 70, headY = groundY - 100 - a.c.headR;
     const d = Math.min(Math.hypot(a.x - cx, torsoY - cy), Math.hypot(a.x - cx, headY - cy));
     if (d < bestD) { bestD = d; best = a; }
   }
-  if (best && bestD < 75) best.getHit(cx);
+  if (best && bestD < 80) best.getHit(cx);
 }
 window.addEventListener("click", (e) => hitAt(e.clientX, e.clientY));
-window.addEventListener("touchstart", (e) => {
-  const t = e.touches[0]; if (t) hitAt(t.clientX, t.clientY);
-}, { passive: true });
+window.addEventListener("touchstart", (e) => { const t = e.touches[0]; if (t) hitAt(t.clientX, t.clientY); }, { passive: true });
 
 function maybeStartFight() {
   if (fightCheck-- > 0) return;
