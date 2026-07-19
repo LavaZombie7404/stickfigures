@@ -1099,15 +1099,13 @@ function removePlayers() {
 window.addEventListener("keydown", (e) => {
   if (notepadWin) {
     const n = notepadWin; if (n.cursor === undefined) n.cursor = n.text.length;
-    if (e.key === "Backspace") { if (n.cursor > 0) { n.text = n.text.slice(0, n.cursor - 1) + n.text.slice(n.cursor); n.cursor--; } e.preventDefault(); }
-    else if (e.key === "Enter") {
-      const before = n.text.slice(0, n.cursor), after = n.text.slice(n.cursor);
-      const lineStart = before.lastIndexOf("\n") + 1, nl = after.indexOf("\n");
-      const curLine = n.text.slice(lineStart, nl === -1 ? n.text.length : n.cursor + nl);
-      const m = curLine.match(/print\(\s*["'`](.*?)["'`]\s*\)/); // print("...") → pe pământ
-      if (m) printToGround(m[1]);
-      n.text = before + "\n" + after; n.cursor = before.length + 1; e.preventDefault();
+    if (e.ctrlKey && (e.key === "e" || e.key === "E")) { // Ctrl+E = rulează print-urile
+      const matches = [...n.text.matchAll(/print\(\s*["'`](.*?)["'`]\s*\)/g)];
+      for (const m of matches) printToGround(m[1]);
+      e.preventDefault(); return;
     }
+    if (e.key === "Backspace") { if (n.cursor > 0) { n.text = n.text.slice(0, n.cursor - 1) + n.text.slice(n.cursor); n.cursor--; } e.preventDefault(); }
+    else if (e.key === "Enter") { n.text = n.text.slice(0, n.cursor) + "\n" + n.text.slice(n.cursor); n.cursor++; e.preventDefault(); }
     else if (e.key === "Escape") { closeNotepad(); }
     else if (e.key === "ArrowLeft") { n.cursor = Math.max(0, n.cursor - 1); e.preventDefault(); }
     else if (e.key === "ArrowRight") { n.cursor = Math.min(n.text.length, n.cursor + 1); e.preventDefault(); }
