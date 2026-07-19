@@ -1069,6 +1069,7 @@ window.addEventListener("mousedown", (e) => {
   if (minecraftWin) {
     const m = minecraftWin;
     if (e.clientX >= m.x && e.clientX <= m.x + m.w && e.clientY >= m.y && e.clientY <= m.y + m.h) { // doar în fereastra Minecraft
+      if (m._xb && e.clientX >= m._xb.x && e.clientX <= m._xb.x + m._xb.s && e.clientY >= m._xb.y && e.clientY <= m._xb.y + m._xb.s) { closeMinecraft(); return; } // butonul X
       if (e.clientX >= m.x + m.w - 22 && e.clientY >= m.y + m.h - 22) { pointer.resizeMc = { ox: e.clientX, t0: m.tile }; return; } // scalare
       if (e.clientX <= m.x + m.w - 30 && e.clientY <= m.y + 26) { pointer.dragMc = { ox: e.clientX - m.x, oy: e.clientY - m.y }; return; } // mută
       pointer.mcBreaking = true; mcBreakAt(e.clientX, e.clientY); return; // spargi blocuri
