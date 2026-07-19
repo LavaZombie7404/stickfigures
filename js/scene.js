@@ -1564,7 +1564,10 @@ window.triggerExpedition = function () {
 
 // spawn stickman controlat de tine
 function spawnPlayer() {
-  if (player) { player.isPlayer = false; player.state = "walk"; player.targetX = null; } // vechiul devine AI
+  if (player) { // vechiul devine AI — primește o culoare (doar cel controlat rămâne gri)
+    player.isPlayer = false; player.state = "walk"; player.targetX = null;
+    player.c = { ...player.c, color: pick(["#FF8C1A", "#E63329", "#46B84B", "#3B7DD8", "#F5C518", "#9b4dff", "#E8A317"]) };
+  }
   playerCount++;
   const c = { id: "player" + playerCount, name: "Tu", color: "#aab0be", hollowHead: false, headR: 20, persona: "jucătorul controlat de tastatură (A/D/săgeți + Space).", chatter: ["Sunt tu!", "Hai!", "Wooo!"], hitLines: ["Au!", "Hei!"], fightLines: ["Ia asta!"] };
   player = new Agent(c, W);
