@@ -33,6 +33,17 @@ function spawnDust(x, y, n) {
   }
 }
 
+function wrapText(text, maxLen) {
+  const words = String(text).split(/\s+/);
+  const lines = []; let cur = "";
+  for (const w of words) {
+    if ((cur + " " + w).trim().length > maxLen && cur) { lines.push(cur); cur = w; }
+    else cur = (cur ? cur + " " : "") + w;
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, 6);
+}
+
 function shade(hex, f) {
   const n = parseInt(hex.slice(1), 16);
   const r = clamp(Math.round(((n >> 16) & 255) * f), 0, 255);
@@ -585,7 +596,9 @@ class Agent {
       if (this.lie > 0) sy = feetY - 55;
       if (this.state === "held") { sx = pointer.x; sy = Math.min(this.heldY, groundY) - topOff; }
       else if (this.state === "thrown") { sy = (groundY - this.tz) - topOff; }
-      ctx.fillText(this.say.text, sx, sy);
+      const lines = wrapText(this.say.text, 28), lh = 19;
+      const startY = sy - (lines.length - 1) * lh;
+      lines.forEach((ln, i) => ctx.fillText(ln, sx, startY + i * lh));
       ctx.restore();
     }
 

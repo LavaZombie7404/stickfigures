@@ -115,7 +115,7 @@ elForm.addEventListener("submit", async (e) => {
   addMsg("bot", reply);
   histories[c.id].push({ role: "assistant", content: reply });
   if (histories[c.id].length > 20) histories[c.id] = histories[c.id].slice(-20);
-  if (current) current.speak(reply.length > 24 ? reply.slice(0, 22) + "…" : reply, 120);
+  if (current) current.speak(reply, Math.min(600, 180 + reply.length * 4)); // tot textul, deasupra capului
 });
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
