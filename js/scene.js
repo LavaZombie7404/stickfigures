@@ -767,7 +767,7 @@ function star(ctx, x, y, r) {
 // ===== RENDER: desen pe canvas 2D offscreen → compus prin WebGL (GPU + shader) =====
 // Fallback automat la 2D pur dacă WebGL nu e disponibil. Emoji/text rămân intacte.
 const canvas = document.getElementById("scene");
-let ctx, gfx = null, gl = null, glState = null, fxLevel = 0.5;
+let ctx, gfx = null, gl = null, glState = null, fxLevel = 0.35;
 function glSupported() { try { return !!document.createElement("canvas").getContext("webgl"); } catch (e) { return false; } }
 (function initRenderer() {
   if (glSupported()) {
@@ -829,7 +829,7 @@ function initGL(g) {
     "void main(){",
     "  vec3 c = texture2D(u_tex, v_uv).rgb;",
     "  vec3 blur = (texture2D(u_tex, v_uv+vec2(u_texel.x,0.)).rgb + texture2D(u_tex, v_uv-vec2(u_texel.x,0.)).rgb + texture2D(u_tex, v_uv+vec2(0.,u_texel.y)).rgb + texture2D(u_tex, v_uv-vec2(0.,u_texel.y)).rgb)*0.25;",
-    "  c += (c-blur)*(0.7*u_fx);",                     // sharpen
+    "  c += (c-blur)*(0.28*u_fx);",                    // sharpen (blând, ca să nu îngroașe textul)
     "  vec2 d = v_uv-0.5; c *= 1.0 - dot(d,d)*(0.4*u_fx);", // vignette
     "  gl_FragColor = vec4(c,1.0);",
     "}"
@@ -1718,7 +1718,7 @@ window.addEventListener("keydown", (e) => {
   if (k === "r") { spawnPlayer(); return; }
   if (k === "t") { removePlayers(); return; }
   if (k === "h") { showHitboxes = !showHitboxes; return; }
-  if (k === "g") { fxLevel = fxLevel < 0.3 ? 0.5 : (fxLevel < 0.8 ? 1.0 : 0); return; } // intensitate shader WebGL
+  if (k === "g") { fxLevel = fxLevel < 0.2 ? 0.35 : (fxLevel < 0.6 ? 0.7 : 0); return; } // intensitate shader WebGL
   if (k === " " || k === "spacebar") { if (player && !player.jumping && player.jumpCd <= 0) { player.jumping = true; player.jumpT = 0; } e.preventDefault(); return; }
   if (k === "a" || k === "d" || k === "arrowleft" || k === "arrowright") { keys.add(k); if (k.startsWith("arrow")) e.preventDefault(); }
 });
