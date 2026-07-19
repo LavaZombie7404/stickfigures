@@ -579,6 +579,14 @@ class Agent {
       ctx.fillText(this.say.text, sx, sy);
       ctx.restore();
     }
+
+    // marcaj provocator (selectat prin dublu-click)
+    if (challenger === this && this.state !== "held") {
+      ctx.save();
+      ctx.font = "20px serif"; ctx.textAlign = "center";
+      ctx.fillText("⚔️", x, feetY - (128 + 2 * this.c.headR) + Math.sin(frame * 0.15) * 3);
+      ctx.restore();
+    }
   }
 }
 
@@ -602,6 +610,8 @@ let adventureCd = rand(1800, 4200);
 let expedition = null;      // {place, activity}
 let showHitboxes = false;
 const pointer = { x: -999, y: -999, px: -999, py: -999, down: false, downX: 0, downY: 0, cand: null, grabbed: null, moved: 0 };
+let challenger = null;                        // primul ales prin dublu-click
+let lastClick = { agent: null, time: 0 };     // pt. detectarea dublu-click-ului
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -647,10 +657,26 @@ window.addEventListener("mouseup", (e) => {
     const vx = pointer.x - pointer.px, vy = pointer.y - pointer.py;
     pointer.grabbed.release(vx * 1.3, vy * 1.3);
   } else if (pointer.cand && pointer.moved < 8) {
-    pointer.cand.getHit(pointer.x); // click scurt = lovitură
+    const a = pointer.cand, now = performance.now();
+    if (lastClick.agent === a && now - lastClick.time < 350) { fightSelect(a); lastClick.agent = null; } // dublu-click
+    else { a.getHit(pointer.x); lastClick = { agent: a, time: now }; }
   }
   pointer.down = false; pointer.cand = null; pointer.grabbed = null;
 });
+
+// dublu-click pe unul, apoi pe altul → se luptă
+function fightSelect(a) {
+  if (a.away || a.state === "held" || a.state === "thrown") return;
+  if (challenger && (challenger.away || challenger.state === "held" || challenger.state === "thrown")) challenger = null;
+  if (challenger === a) { challenger = null; a.speak("...", 40); return; }
+  if (!challenger) { challenger = a; a.lie = 0; a.sleepPhase = null; a.speak("Cine mă provoacă?", 100); }
+  else { startFightBetween(challenger, a); challenger = null; }
+}
+function startFightBetween(a, b) {
+  for (const x of [a, b]) { x.lie = 0; x.sleepPhase = null; x.jumping = false; x.building = null; if (x.opponent) x.endFight(); }
+  a.startFight(b);
+  b.opponent = a; b.state = "fight"; b.stateTimer = a.stateTimer; b.attacker = false; b.speak(pick(b.c.fightLines), 90);
+}
 // touch: tap = lovitură (fără drag pt. simplitate)
 window.addEventListener("touchstart", (e) => { const t = e.touches[0]; if (t) { pointer.x = t.clientX; pointer.y = t.clientY; const a = nearestAgent(t.clientX, t.clientY); if (a) a.getHit(t.clientX); } }, { passive: true });
 window.addEventListener("contextmenu", (e) => { e.preventDefault(); const a = nearestAgent(e.clientX, e.clientY); if (a && window.openChat) window.openChat(a); });
