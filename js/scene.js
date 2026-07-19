@@ -39,6 +39,7 @@ class Agent {
     this.building = null;
     this.buildTimer = 0;
     this.buildDur = 0;
+    this.builtCount = 0; // max 2 construcții per stickman
   }
 
   speak(text, ttl = 120) { this.say = { text, ttl }; }
@@ -140,10 +141,13 @@ class Agent {
           this.sleepDir = Math.random() < 0.5 ? 1 : -1; this.speak("...", 60); this.sleepCd = rand(14400, 21600);
         } else {
           const r = Math.random();
-          if (r < 0.02 && structures.length < 5) {
+          if (r < 0.012 && this.builtCount < 2 && structures.length < 8) {
+            const type = pick(["house", "tower", "tree", "campfire"]);
             this.state = "build"; this.buildDur = rand(340, 480); this.buildTimer = this.buildDur;
-            const s = { x: this.x, color: this.c.color, progress: 0 }; structures.push(s); this.building = s;
-            this.speak(pick(["Construiesc!", "O casă!", "Hai să construim!"]), 120);
+            const s = { x: this.x, color: this.c.color, progress: 0, type }; structures.push(s); this.building = s;
+            this.builtCount++;
+            const msg = { house: ["Construiesc!", "O casă!"], tower: ["Un turn!", "Sus!"], tree: ["Un copac!", "Verde!"], campfire: ["Un foc!", "Cald!"] };
+            this.speak(pick(msg[type]), 120);
           } else if (r < 0.22) { this.state = "run"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 260); this.speak(pick(["Aici!", "Repede!", "Hop!"]), 60); }
           else if (r < 0.45) { this.state = "idle"; this.targetX = null; this.stateTimer = rand(60, 140); }
           else { this.state = "walk"; this.targetX = rand(80, W - 80); this.stateTimer = rand(120, 300); }
@@ -276,6 +280,7 @@ const canvas = document.getElementById("scene");
 const ctx = canvas.getContext("2d");
 let W = 0, H = 0, agents = [];
 let fightCheck = 300;
+let frame = 0;
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -331,32 +336,63 @@ function drawGround() {
   ctx.beginPath(); ctx.moveTo(0, groundY); ctx.lineTo(W, groundY); ctx.stroke();
 }
 
-function drawHouse(s) {
-  const w = 120, wallH = 96, base = groundY, x = s.x, p = s.progress; // cât un stickman
+function drawStructure(s) {
+  const base = groundY, x = s.x, p = s.progress;
   ctx.save();
-  ctx.strokeStyle = s.color; ctx.lineWidth = 5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.strokeStyle = s.color; ctx.fillStyle = s.color;
+  ctx.lineWidth = 5; ctx.lineCap = "round"; ctx.lineJoin = "round";
   ctx.globalAlpha = 0.9;
-  const hh = wallH * Math.min(1, p / 0.7);
-  ctx.strokeRect(x - w / 2, base - hh, w, hh);
-  if (p > 0.7) {
-    const rp = (p - 0.7) / 0.3;
-    ctx.beginPath();
-    ctx.moveTo(x - w / 2 - 8, base - wallH);
-    ctx.lineTo(x, base - wallH - 46 * rp);
-    ctx.lineTo(x + w / 2 + 8, base - wallH);
-    ctx.stroke();
+
+  if (s.type === "house") {
+    const w = 120, wallH = 96, hh = wallH * Math.min(1, p / 0.7);
+    ctx.strokeRect(x - w / 2, base - hh, w, hh);
+    if (p > 0.7) {
+      const rp = (p - 0.7) / 0.3;
+      ctx.beginPath();
+      ctx.moveTo(x - w / 2 - 8, base - wallH); ctx.lineTo(x, base - wallH - 46 * rp); ctx.lineTo(x + w / 2 + 8, base - wallH);
+      ctx.stroke();
+    }
+    if (p >= 1) { ctx.strokeRect(x - 16, base - 44, 32, 44); ctx.strokeRect(x + 24, base - 74, 24, 24); }
   }
-  if (p >= 1) {
-    ctx.strokeRect(x - 16, base - 44, 32, 44);   // ușă
-    ctx.strokeRect(x + 24, base - 74, 24, 24);   // fereastră
+  else if (s.type === "tower") {
+    const w = 56, wallH = 150, hh = wallH * Math.min(1, p / 0.85);
+    ctx.strokeRect(x - w / 2, base - hh, w, hh);
+    if (p >= 1) {
+      for (let i = -1; i <= 1; i++) ctx.strokeRect(x + i * 18 - 7, base - wallH - 12, 14, 12); // creneluri
+      ctx.strokeRect(x - 10, base - 42, 20, 42);   // ușă
+      ctx.strokeRect(x - 9, base - 100, 18, 18);   // fereastră
+    }
+  }
+  else if (s.type === "tree") {
+    const trunkH = 64 * Math.min(1, p / 0.5);
+    ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(x, base); ctx.lineTo(x, base - trunkH); ctx.stroke();
+    if (p > 0.5) {
+      const r = 46 * (p - 0.5) / 0.5;
+      ctx.beginPath(); ctx.arc(x, base - 64 - 26, r, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  else if (s.type === "campfire") {
+    ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(x - 24, base - 4); ctx.lineTo(x + 24, base - 16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 24, base - 16); ctx.lineTo(x + 24, base - 4); ctx.stroke();
+    if (p > 0.35) {
+      const rp = Math.min(1, (p - 0.35) / 0.65);
+      const fl = (30 + Math.sin(frame * 0.3) * 7) * rp;
+      ctx.fillStyle = "#ff9a2e";
+      ctx.beginPath(); ctx.moveTo(x - 14, base - 12); ctx.quadraticCurveTo(x - 4, base - 12 - fl * 0.6, x, base - 12 - fl); ctx.quadraticCurveTo(x + 4, base - 12 - fl * 0.6, x + 14, base - 12); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#ffd23f";
+      ctx.beginPath(); ctx.moveTo(x - 6, base - 12); ctx.quadraticCurveTo(x, base - 12 - fl * 0.75, x + 6, base - 12); ctx.closePath(); ctx.fill();
+    }
   }
   ctx.restore();
 }
 
 function loop() {
+  frame++;
   ctx.clearRect(0, 0, W, H);
   drawGround();
-  structures.forEach(drawHouse);
+  structures.forEach(drawStructure);
   maybeStartFight();
   agents.forEach(a => a.update(W));
   [...agents].sort((a, b) => a.x - b.x).forEach(a => a.draw(ctx));
