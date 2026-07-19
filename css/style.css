@@ -118,3 +118,31 @@ html, body {
   .chat-panel, .chat-panel.group { left: 10px; right: 10px; width: auto; bottom: 10px; height: 70vh; }
   #groupBtn { bottom: 12px; left: 12px; padding: 10px 14px; }
 }
+
+/* ---------- Expediția ---------- */
+#expedBtn {
+  position: fixed; bottom: 20px; left: 210px; z-index: 40;
+  background: #2a2418; color: #ffd27a; border: 1px solid #5c4a2b;
+  border-radius: 12px; padding: 12px 18px; font-size: 15px; font-weight: 700;
+  cursor: pointer; font-family: "Segoe UI", system-ui, sans-serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+#expedBtn:hover { background: #3a3320; }
+
+.exped-panel {
+  position: fixed; bottom: 74px; left: 20px; z-index: 45;
+  width: 340px; max-width: calc(100vw - 40px);
+  background: #13152a; border: 1px solid #2c3152; border-top: 3px solid #ffd27a;
+  border-radius: 16px; box-shadow: 0 16px 50px rgba(0,0,0,0.6);
+  font-family: "Segoe UI", system-ui, sans-serif; overflow: hidden;
+}
+.exped-body { padding: 14px 16px; }
+.exped-line { margin: 8px 0; font-size: 15px; color: #e8ecff; }
+.exped-line b { color: #fff; }
+.exped-empty { color: #cdd3ff; font-size: 15px; margin: 4px 0 10px; }
+.exped-hint { color: #9aa0c0; font-size: 13px; line-height: 1.5; }
+
+@media (max-width: 560px) {
+  #expedBtn { left: 12px; bottom: 60px; }
+  .exped-panel { left: 10px; right: 10px; width: auto; }
+}

@@ -118,7 +118,9 @@ elForm.addEventListener("submit", async (e) => {
   if (current) current.speak(reply.length > 24 ? reply.slice(0, 22) + "…" : reply, 120);
 });
 
-async function claudeReply(c, history) {
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function claudeReply(c, history, retry = 1) {
   const system =
     `Ești ${c.name}, un stick-figure din gașca lui Alan Becker (Animator vs. Animation). ` +
     `Personalitatea ta: ${c.persona} ` +
@@ -136,20 +138,38 @@ async function claudeReply(c, history) {
     },
     body: JSON.stringify({ model: MODEL, max_tokens: 400, system, messages }),
   });
+  if ((res.status === 429 || res.status === 529) && retry > 0) { await sleep(1400); return claudeReply(c, history, retry - 1); }
   if (!res.ok) throw new Error(res.status + " " + (await res.text()).slice(0, 120));
   const data = await res.json();
   const block = (data.content || []).find(b => b.type === "text");
   return block ? block.text.trim() : "(fără răspuns)";
 }
 
-// fallback scriptat simplu (fără cheie)
+// ---- fallback scriptat contextual (fără cheie) — nu răspunsuri random ----
+let userName = null;
+function tone(c, base) {
+  const pre = { red: ["", "Hmph. "], green: ["", "Pace. "], blue: ["", "Logic: "], yellow: ["", "Yo! "], purple: ["", "Mwaha. "], orange: ["", ""] }[c.id] || [""];
+  return pick(pre) + base;
+}
 function scriptedReply(c, msg) {
-  const t = msg.toLowerCase();
-  if (/salut|buna|bună|hei|hello|noroc/.test(t)) return pick(["Salut! 🙂", "Hei! Ce faci?", "Bună!"]);
-  if (/cine|nume|esti|ești/.test(t)) return `Sunt ${c.name}, din gașca lui Alan Becker!`;
-  if (/ce faci|cum esti|cum ești/.test(t)) return pick(c.chatter);
-  if (/pa|bye|la revedere/.test(t)) return "Pa! Revino oricând. 👋";
-  return pick([...c.chatter, "Interesant! Mai zi.", "Zi mai departe 🙂", "Hmm, spune-mi mai mult."]);
+  const t = msg.toLowerCase().trim();
+  let m = t.match(/(?:m[aă] cheam[aă]|numele meu (?:e|este)|eu sunt)\s+([a-zăâîșț]+)/i);
+  if (m) { userName = m[1][0].toUpperCase() + m[1].slice(1); return tone(c, `Îmi pare bine, ${userName}! 🙂`); }
+  if (/cum m[aă] cheam[aă]|care (?:e|ii|îi) numele meu/.test(t)) return tone(c, userName ? `Te cheamă ${userName}!` : "Nu mi-ai spus încă cum te cheamă.");
+  if (/salut|bun[aă]|hei|hello|noroc|servus/.test(t)) return tone(c, pick(["Salut!", "Hei, ce faci?", "Bună!"]));
+  if (/ce faci|cum e(ș|s)ti|ce mai faci/.test(t)) return tone(c, pick(c.chatter));
+  if (/cine e(ș|s)ti|ce e(ș|s)ti/.test(t)) return tone(c, `Sunt ${c.name}, din gașca lui Alan Becker!`);
+  if (/mul(ț|t)umesc|mersi|thx|thanks/.test(t)) return tone(c, "Cu plăcere! 🙂");
+  if (/(^|\s)(pa|bye|la revedere|ne vedem)(\s|$)/.test(t)) return tone(c, "Pa! Revino oricând. 👋");
+  if (/minecraft|redstone|bloc|construi/.test(t)) return tone(c, "Minecraft! Am construit atâtea acolo. ⛏️");
+  if (/lupt[aă]|b[aă]taie|fight/.test(t)) return tone(c, "O luptă? Depinde cu cine. 💪");
+  if (/glum[aă]|banc|haios|r[aâ]zi/.test(t)) return tone(c, "Haha! Îmi place umorul. 😄");
+  if (/iubes|dragoste|frumos|dr[aă]gu/.test(t)) return tone(c, "Aww, ești de treabă. 🧡");
+  if (/aventur[aă]|explor|expedi/.test(t)) return tone(c, "Aventură? Mă bag oricând! 🗺️");
+  if (/ajut|help|cum (s[aă]|pot)/.test(t)) return tone(c, "Sigur, spune-mi ce-ți trebuie.");
+  if (t.endsWith("?")) return tone(c, pick(["Bună întrebare! Tu cum vezi?", "Hmm, interesant. Spune-mi mai multe.", "Depinde — dă-mi detalii."]));
+  if (t.length > 3) return tone(c, pick(["Serios? Spune-mi mai mult.", "Interesant! Și apoi?", "Aha, te ascult.", "De ce zici asta?"]));
+  return tone(c, pick(c.chatter));
 }
 
 // ================= CHAT DE GRUP (vorbește cu toți) =================
@@ -214,25 +234,42 @@ gForm.addEventListener("submit", async (e) => {
     gAdd("bot", null, null, n > 0 ? "🏃 Se întorc toți din excursie!" : "Sunt deja toți aici. 🙂");
   }
 
-  const typing = document.createElement("div");
-  typing.className = "cmsg bot typing"; typing.textContent = "toți scriu…";
-  gLog.appendChild(typing); gLog.scrollTop = gLog.scrollHeight;
-
-  const replies = await Promise.all(CHARACTERS.map(async (c) => {
+  // secvențial → toți răspund (evită rate-limit-ul care făcea să meargă doar la unii)
+  for (const c of CHARACTERS) {
     if (!histories[c.id]) histories[c.id] = [];
     histories[c.id].push({ role: "user", content: msg });
     let r;
     try { r = hasKey() ? await claudeReply(c, histories[c.id]) : scriptedReply(c, msg); }
-    catch (err) { r = "(eroare: " + (err.message || err) + ")"; }
+    catch (err) { r = scriptedReply(c, msg); }
     histories[c.id].push({ role: "assistant", content: r });
     if (histories[c.id].length > 20) histories[c.id] = histories[c.id].slice(-20);
-    return { c, r };
-  }));
-
-  typing.remove();
-  replies.forEach(({ c, r }) => {
     gAdd("bot", c.name, c.color, r);
     const ag = agents.find(a => a.c.id === c.id);
     if (ag) ag.speak(r.length > 22 ? r.slice(0, 20) + "…" : r, 120);
-  });
+  }
+});
+
+// ================= BUTON EXPEDIȚIA =================
+const ebtn = document.createElement("button");
+ebtn.id = "expedBtn"; ebtn.textContent = "🗺️ Expediția";
+document.body.appendChild(ebtn);
+
+const epanel = document.createElement("div");
+epanel.className = "exped-panel hidden";
+epanel.innerHTML = `<div class="chat-head"><span class="cname" style="color:#ffd27a">🗺️ Expediția</span><button class="chat-close">✕</button></div><div class="exped-body"></div>`;
+document.body.appendChild(epanel);
+const eBody = epanel.querySelector(".exped-body");
+epanel.querySelector(".chat-close").addEventListener("click", () => { epanel.classList.add("hidden"); });
+
+let expedTick = null;
+function refreshExped() {
+  const info = window.getExpedition ? window.getExpedition() : { active: false };
+  if (!info.active) { eBody.innerHTML = `<p class="exped-empty">Nimeni nu e plecat în expediție acum.</p><p class="exped-hint">Când Orange strigă „Aventură!", câțiva pleacă aici. Scrie <b>veniti</b> în chat ca să-i chemi.</p>`; return; }
+  const t = info.remaining === null ? "pornesc chiar acum…" : `se întorc în ~${Math.floor(info.remaining / 60)}:${String(info.remaining % 60).padStart(2, "0")}`;
+  eBody.innerHTML = `<p class="exped-line">🧭 <b>${info.names.join(", ")}</b></p><p class="exped-line">📍 au plecat spre <b>${info.place}</b></p><p class="exped-line">⚔️ ca să <b>${info.activity}</b></p><p class="exped-line">⏳ ${t}</p>`;
+}
+ebtn.addEventListener("click", () => {
+  epanel.classList.toggle("hidden");
+  if (!epanel.classList.contains("hidden")) { refreshExped(); expedTick = setInterval(refreshExped, 1000); }
+  else if (expedTick) { clearInterval(expedTick); expedTick = null; }
 });

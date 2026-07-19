@@ -37,4 +37,11 @@ const CHARACTERS = [
     hitLines: ["Auci!", "Construcția mea!", "Nu inventia!"],
     fightLines: ["Am un scut!", "Poc!", "Stai!"],
   },
+  {
+    id: "purple", name: "Purple", color: "#9b4dff", hollowHead: false, headR: 20,
+    persona: "misterios, dramatic și un pic răutăcios, dar de fapt cool. Ești Dark Lord-ul, personajul mov din gașcă. Vorbești teatral, cu aer de răufăcător simpatic, dar în fond ești de-al lor.",
+    chatter: ["Mwahaha.", "Întuneric...", "Interesant.", "Puterea!"],
+    hitLines: ["Cum îndrăznești!", "Grr!", "Vei plăti!"],
+    fightLines: ["Simte puterea!", "Prea slab!", "Distrugere!"],
+  },
 ];
